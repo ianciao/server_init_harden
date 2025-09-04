@@ -1,14 +1,14 @@
 #!/bin/sh
 
 SCRIPT_NAME=server-init-harden
-SCRIPT_VERSION=2.0
+SCRIPT_VERSION=2.2
 TIMESTAMP=$(date '+%Y-%m-%d_%H-%M-%S')
 LOGFILE_NAME="${SCRIPT_NAME}_${TIMESTAMP}.log"
 START_TIME=$(date +%s)
 
-SHOW_CREDENTIALS=false
 USERNAME=""
 RESET_ROOT=false
+SHOW_CREDENTIALS=false
 
 usage() {
     cat <<EOF
@@ -134,7 +134,31 @@ log_credentials() {
     fi
 }
 
-# TODO: Print the options chosen by user
+print_opration_details() {
+    echo "Following system hardening operations will be performed:"
+
+    if [ "$RESET_ROOT" = true ]; then
+        echo "    [-r]: Existing root user's password will be re-created"
+    fi
+
+    if [ "$SHOW_CREDENTIALS" = true ]; then
+        echo "    [-s]: Generated passwords, keys are will be displayed on the screen"
+    fi
+
+    if [ -n "$USERNAME" ]; then
+        echo "    [-u $USERNAME]: New user $USERNAME will be created"
+        echo "    [-u $USERNAME]: New SSH key will be generated for $USERNAME"
+    else
+        echo "    New SSH key will be generated for $(whoami)"
+    fi
+
+    echo "    SSH: login to root account will be disabled"
+    echo "    SSH: login can only happen using generated SSH keys"
+    echo "    Software repository will be updated & required software will be installed"
+    echo "    UFW: Firewall will be configured to only allow SSH, HTTP, HTTPS traffic into the server"
+    echo "    Fail2Ban: Configured to automatically block repeat offender IPs"
+}
+
 print_logfile_details() {
     printf "\nLog file location: %s\n" "$LOGFILE_NAME"
     printf "  cat %s        # View log file\n" "$LOGFILE_NAME"
@@ -713,8 +737,9 @@ main() {
     create_logfile
 
     clear
+    print_opration_details
     print_logfile_details
-    echo "Press Enter to continue..."
+    echo "Press [Enter] to continue. [Ctrl + c] to cancel..."
     # shellcheck disable=SC2162,SC2034
     read dummy
 
