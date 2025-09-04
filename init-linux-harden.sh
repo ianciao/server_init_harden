@@ -1,17 +1,16 @@
 #!/bin/sh
 
-SCRIPT_NAME=linux_init_harden
+SCRIPT_NAME=server-init-harden
 SCRIPT_VERSION=2.0
 TIMESTAMP=$(date '+%Y-%m-%d_%H-%M-%S')
 LOGFILE_NAME="${SCRIPT_NAME}_${TIMESTAMP}.log"
 SHOW_CREDENTIALS=false
 START_TIME=$(date +%s)
 
-# Global variables for username and root-reset flag
+# username and root-reset flag
 USERNAME=""
 RESET_ROOT=false
 
-# Print usage information
 usage() {
     cat <<EOF
 ${SCRIPT_NAME} v${SCRIPT_VERSION}
@@ -23,10 +22,10 @@ USAGE:
 DESCRIPTION:
     This script performs several security hardening operations on a Linux server:
     - Hardens SSH configuration (disables root login, password auth)
-    - Configures Fail2ban for intrusion prevention
     - Creates new user with sudo access (optional)
     - Generates secure SSH keys
     - Resets root password (optional)
+    - Configures Fail2ban for intrusion prevention
     - Sets up UFW firewall rules
 
 OPTIONS:
@@ -100,7 +99,18 @@ parse_args() {
 ###########################################################################################
 ###################################### HELPER FUNCTIONS ###################################
 
-# Helper function for logging to console
+create_logfile() {
+    touch "$LOGFILE_NAME"
+}
+
+file_log() {
+    # $1: Log message
+
+    # Write to logfile with timestamps and log level
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    printf "%s: %s\n" "$timestamp" "$1" >>"$LOGFILE_NAME"
+}
+
 console_log() {
     # $1: Log level
     # $2: Log message
@@ -114,20 +124,6 @@ console_log() {
     esac
 }
 
-create_logfile() {
-    touch "$LOGFILE_NAME"
-}
-
-# Log message to logfile
-file_log() {
-    # $1: Log message
-    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-
-    # Write to logfile with timestamps and log level
-    printf "%s: %s\n" "$timestamp" "$1" >>"$LOGFILE_NAME"
-}
-
-# Log credentials to logfile & to console (optional)
 log_credentials() {
     message="$1"
     file_log "$message"
@@ -136,16 +132,14 @@ log_credentials() {
     fi
 }
 
-# Show log file information at beginning & end of script execution
-show_log_info() {
+print_logfile_details() {
     printf "\nLog file location: %s\n" "$LOGFILE_NAME"
     printf "To view the log file, use one of these commands:\n"
     printf "  cat %s        # View log file\n" "$LOGFILE_NAME"
     printf "  tail -f %s    # Follow log in real-time\n\n" "$LOGFILE_NAME"
 }
 
-# Format duration in human readable format
-format_duration() {
+formatted_execution_duration() {
     duration=$1
     days=$((duration / 86400))
     hours=$(((duration % 86400) / 3600))
@@ -163,7 +157,6 @@ format_duration() {
     fi
 }
 
-# Helper function for service management
 manage_service() {
     service_name="$1"
     action="$2" # start, stop, restart, enable
@@ -239,9 +232,7 @@ manage_service() {
 ###########################################################################################
 ###################################### OPERATIONS #########################################
 
-# Function to show log file information
 reset_root_password() {
-    # Generate a new root password
     file_log "Attempting to reset root password"
     ROOT_PASSWORD=$(head -c 12 /dev/urandom | base64 | tr -dc "[:alnum:]" | head -c 15)
 
@@ -302,7 +293,6 @@ create_user() {
     # Generate a 15-character random password
     USER_PASSWORD=$(head -c 12 /dev/urandom | base64 | tr -dc "[:alnum:]" | head -c 15)
 
-    # Create user with the generated password
     file_log "Creating user $USERNAME"
     output=$(printf '%s\n%s\n' "${USER_PASSWORD}" "${USER_PASSWORD}" | adduser "$USERNAME" -q --gecos "First Last,RoomNumber,WorkPhone,HomePhone" 2>&1)
 
@@ -335,7 +325,6 @@ create_user() {
     return 0
 }
 
-# Function to reset root password
 generate_ssh_key() {
     target_user="$1"
 
@@ -409,7 +398,6 @@ generate_ssh_key() {
     return 0
 }
 
-# Function to update SSH config settings
 update_ssh_setting() {
     setting="$1"
     value="$2"
@@ -425,7 +413,6 @@ update_ssh_setting() {
     file_log "Updated SSH setting: ${setting} ${value}"
 }
 
-# Harden SSH configuration
 harden_ssh_config() {
     console_log "INFO" "Configuring SSH hardening settings..."
     file_log "Starting SSH configuration hardening"
@@ -487,7 +474,6 @@ harden_ssh_config() {
     exit 1
 }
 
-# Install packages using the appropriate package manager
 install_package() {
     if [ $# -eq 0 ]; then
         file_log "No package specified for installation"
@@ -501,7 +487,7 @@ install_package() {
         # Debian/Ubuntu
         file_log "Installing $PACKAGE_NAME using apt..."
         # shellcheck disable=SC2086
-        output=$(DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y $PACKAGE_NAME 2>&1)
+        output=$(DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y --no-install-recommends $PACKAGE_NAME 2>&1)
         ret=$?
     elif [ -f /etc/fedora-release ]; then
         # Fedora
@@ -535,7 +521,6 @@ install_package() {
     return 0
 }
 
-# Configure UFW firewall
 configure_ufw() {
     console_log "INFO" "Starting UFW configuration..."
     file_log "Starting UFW configuration"
@@ -584,49 +569,45 @@ configure_ufw() {
     return 0
 }
 
-set_jail_local_setting() {
+update_fail2ban_jail_local_file() {
     search_term="$1"
     new_value="$2"
 
     # We want to update the setting in the [DEFAULT] section
-    # It [DEFAULT] section ends right before "# JAILS"
+    # [DEFAULT] section ends right before "# JAILS"
     range_start="^\[DEFAULT\]$"
     range_end="^# JAILS$"
 
-    # Check if the setting exists and is not commented out; comment it and add the new setting on next line
+    # When the setting exists & it's NOT commented out -> comment it and add the new setting on next line
     if sed -n "/${range_start}/,/${range_end}/p" "$JAIL_LOCAL" | grep -q "^${search_term}[[:blank:]]*="; then
         sed -ri "/${range_start}/,/${range_end}/ s/^(${search_term}[[:blank:]]*=.*)/#\1/" "$JAIL_LOCAL"
         sed -ri "/${range_start}/,/${range_end}/ s/^#${search_term}[[:blank:]]*=.*/&\n${search_term} = ${new_value}/" "$JAIL_LOCAL"
-    else
-        # If the setting is commented out or doesn't exist, add it after the commented line or at the end of the section
+    else # If the setting is commented out or it doesn't exist -> add it after the commented line or at the end of the section
         sed -ri "/${range_start}/,/${range_end}/ s/^#${search_term}[[:blank:]]*=.*/&\n${search_term} = ${new_value}/" "$JAIL_LOCAL"
     fi
 }
 
-# Configure Fail2ban
 configure_fail2ban() {
     console_log "INFO" "Starting Fail2ban configuration..."
     file_log "Starting Fail2ban configuration"
 
-    # Check if Fail2ban is installed
     if ! command -v fail2ban-client >/dev/null 2>&1; then
         file_log "Fail2ban is not installed"
         return 1
     fi
 
-    JAIL_LOCAL="/etc/fail2ban/jail.local"
-    DEFAULT_JAIL_CONF="/etc/fail2ban/jail.conf"
-    CUSTOM_JAILS="/etc/fail2ban/jail.d/custom-enabled.conf"
+    JAIL_LOCAL_FILE="/etc/fail2ban/jail.local"
+    DEFAULT_JAIL_CONF_FILE="/etc/fail2ban/jail.conf"
+    CUSTOM_JAILS_FILE="/etc/fail2ban/jail.d/custom-enabled.conf"
 
     # Backup jail.local if it exists
-    if [ -f "$JAIL_LOCAL" ]; then
-        JAIL_LOCAL_BACKUP="${JAIL_LOCAL}.bak.${TIMESTAMP}"
-        cp "$JAIL_LOCAL" "$JAIL_LOCAL_BACKUP"
-        file_log "Created backup of existing jail.local at $JAIL_LOCAL_BACKUP"
-    else
-        # Copy jail.conf to jail.local if jail.local doesn't exist
-        if [ -f "$DEFAULT_JAIL_CONF" ]; then
-            cp "$DEFAULT_JAIL_CONF" "$JAIL_LOCAL"
+    if [ -f "$JAIL_LOCAL_FILE" ]; then
+        JAIL_LOCAL_BACKUP_FILE="${JAIL_LOCAL_FILE}.bak.${TIMESTAMP}"
+        cp "$JAIL_LOCAL_FILE" "$JAIL_LOCAL_BACKUP_FILE"
+        file_log "Created backup of existing jail.local at $JAIL_LOCAL_BACKUP_FILE"
+    else # Copy jail.conf to jail.local if jail.local doesn't exist
+        if [ -f "$DEFAULT_JAIL_CONF_FILE" ]; then
+            cp "$DEFAULT_JAIL_CONF_FILE" "$JAIL_LOCAL_FILE"
             file_log "Created jail.local from jail.conf"
         else
             console_log "ERROR" "Neither jail.conf nor jail.local exists"
@@ -635,7 +616,7 @@ configure_fail2ban() {
         fi
     fi
 
-    # Get server's public IP
+    # Fetch public IP using ipinfo.io/ip
     file_log "Attempting to get server's public IP"
     output=$(curl -s -4 ifconfig.me 2>&1 || curl -s -4 icanhazip.com 2>&1 || curl -s -4 ipinfo.io/ip 2>&1)
     if [ -z "$output" ]; then
@@ -648,13 +629,13 @@ configure_fail2ban() {
     fi
 
     # Update default settings in jail.local
-    set_jail_local_setting "bantime" "5h"
-    set_jail_local_setting "backend" "systemd"
-    set_jail_local_setting "ignoreip" "127.0.0.1\/8 ::1 $PUBLIC_IP"
+    update_fail2ban_jail_local_file "bantime" "5h"
+    update_fail2ban_jail_local_file "backend" "systemd"
+    update_fail2ban_jail_local_file "ignoreip" "127.0.0.1\/8 ::1 $PUBLIC_IP"
 
     # Enable jails and more settings for them in /etc/fail2ban/jail.d/custom-enabled.conf
-    file_log "Enabling jails in $CUSTOM_JAILS"
-    cat <<FAIL2BAN >$CUSTOM_JAILS
+    file_log "Enabling jails in $CUSTOM_JAILS_FILE"
+    cat <<FAIL2BAN >$CUSTOM_JAILS_FILE
 [sshd]
 enabled = true
 filter = sshd
@@ -675,33 +656,33 @@ bantime  = 30d
 maxretry = 50
 FAIL2BAN
 
-    # Restart fail2ban
     if ! manage_service fail2ban restart; then
+        # If restarting service fails, try reverting all configurations & restart again
+
         console_log "ERROR" "Failed to restart fail2ban service"
         file_log "Failed to restart fail2ban service"
 
         # Revert jail.local to backup if it exists
-        if [ -f "$JAIL_LOCAL_BACKUP" ]; then
+        if [ -f "$JAIL_LOCAL_BACKUP_FILE" ]; then
             console_log "INFO" "Reverting jail.local to backup..."
-            file_log "Reverting jail.local to backup from: $JAIL_LOCAL_BACKUP"
+            file_log "Reverting jail.local to backup from: $JAIL_LOCAL_BACKUP_FILE"
 
-            if ! cp "$JAIL_LOCAL_BACKUP" "$JAIL_LOCAL"; then
+            if ! cp "$JAIL_LOCAL_BACKUP_FILE" "$JAIL_LOCAL_FILE"; then
                 console_log "ERROR" "Failed to restore jail.local backup"
                 file_log "Failed to restore jail.local backup"
                 exit 1
             fi
-        else
-            # If no backup exists (meaning jail.local was created from jail.conf), remove it
+        else # If no backup exists (i.e, jail.local was created from jail.conf) -> remove jail.local
             console_log "INFO" "Removing newly created jail.local..."
             file_log "Removing newly created jail.local"
-            rm -f "$JAIL_LOCAL"
+            rm -f "$JAIL_LOCAL_FILE"
         fi
 
         # Remove the custom enabled configuration
-        if [ -f "$CUSTOM_JAILS" ]; then
+        if [ -f "$CUSTOM_JAILS_FILE" ]; then
             console_log "INFO" "Removing custom jail configuration..."
-            file_log "Removing custom jail configuration: $CUSTOM_JAILS"
-            rm -f "$CUSTOM_JAILS"
+            file_log "Removing custom jail configuration: $CUSTOM_JAILS_FILE"
+            rm -f "$CUSTOM_JAILS_FILE"
         fi
 
         # Try restarting fail2ban with original configuration
@@ -725,7 +706,7 @@ main() {
     parse_args "$@"
     create_logfile
 
-    show_log_info
+    print_logfile_details
 
     # Log script start
     console_log "INFO" "Starting $SCRIPT_NAME v$SCRIPT_VERSION"
@@ -735,35 +716,36 @@ main() {
     if [ "$RESET_ROOT" = true ]; then
         console_log "INFO" "Resetting root password..."
         reset_root_password
-        # Continue regardless of the result
+        # Continue regardless of any errors
     fi
 
     # Step 2: Create new user
     if [ -n "$USERNAME" ]; then
         console_log "INFO" "Creating user..."
         create_user
+        # Continue regardless of any errors
     fi
 
     # Step 3: Generate SSH key for user
     if [ -n "$USERNAME" ]; then
         if ! generate_ssh_key "$USERNAME"; then
             console_log "ERROR" "Failed to generate SSH key for new user: $USERNAME"
-            show_log_info
-            return 1
+            print_logfile_details
+            return 1 # Abort on error
         fi
     else
         CURRENT_USER=$(whoami)
         if ! generate_ssh_key "$CURRENT_USER"; then
             console_log "ERROR" "Failed to generate SSH key for current user: $CURRENT_USER"
-            show_log_info
-            return 1
+            print_logfile_details
+            return 1 # Abort on error
         fi
     fi
 
     # Step 4: Configure SSH
     if ! harden_ssh_config; then
-        show_log_info
-        return 1
+        print_logfile_details
+        return 1 # Abort on error
     fi
 
     # Step 5: Install required packages
@@ -771,8 +753,8 @@ main() {
     file_log "Installing required packages"
     if ! install_package "curl ufw fail2ban"; then
         console_log "ERROR" "Failed to install required packages"
-        show_log_info
-        return 1
+        print_logfile_details
+        return 1 # Abort on error
     fi
     console_log "Success" "Successfully installed all required packages"
     file_log "Successfully installed all required packages"
@@ -782,8 +764,8 @@ main() {
     file_log "Configuring UFW"
     if ! configure_ufw; then
         console_log "ERROR" "Failed to configure UFW"
-        show_log_info
-        return 1
+        print_logfile_details
+        return 1 # Abort on error
     fi
     console_log "Success" "Successfully configured UFW"
     file_log "Successfully configured UFW"
@@ -793,8 +775,8 @@ main() {
     file_log "Configuring Fail2ban"
     if ! configure_fail2ban; then
         console_log "ERROR" "Failed to configure Fail2ban"
-        show_log_info
-        return 1
+        print_logfile_details
+        return 1 # Abort on error
     fi
     console_log "Success" "Successfully configured Fail2ban"
     file_log "Successfully configured Fail2ban"
@@ -805,11 +787,11 @@ main() {
     # Calculate and show execution time
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))
-    FORMATTED_DURATION=$(format_duration $DURATION)
+    FORMATTED_DURATION=$(formatted_execution_duration $DURATION)
     console_log "INFO" "Total execution time: $FORMATTED_DURATION"
     file_log "Total execution time: $FORMATTED_DURATION"
 
-    show_log_info
+    print_logfile_details
     return 0
 }
 
