@@ -530,54 +530,57 @@ harden_ssh_config() {
     fi
 }
 
-install_package() {
-    if [ $# -eq 0 ]; then
-        file_log "ERROR" "No package specified for installation"
-        return 1
-    fi
+install_packages() {
+    console_log "INFO" "Installing required applications..."
+    file_log "INFO" "Installing required applications..."
 
-    PACKAGE_NAME="$1"
+    LINUX_ONLY_PACKAGES="firewalld"
+    COMMON_PACKAGES="curl sudo sshguard"
 
     # Detect the package manager and OS
-    if [ -f /etc/debian_version ] || [ -f /etc/ubuntu_version ]; then
-        # Debian/Ubuntu
-        file_log "INFO" "Installing $PACKAGE_NAME using apt..."
-        # Don't let timezone setting stop the installation: make UTC the system timezone
-        ln -fs /usr/share/zoneinfo/UTC /etc/localtime
-        file_log "WARNING" "Set UTC as system timezone. Change this after the script completes."
+    if [ -f /etc/debian_version ] || [ -f /etc/ubuntu_version ]; then # Debian/Ubuntu
+        # Don't let timezone setting stop installation: make UTC server's timezone
+        ln -fs /usr/share/zoneinfo/UTC /etc/localtime >/dev/null
+        console_log "WARNING" "Server's timezone set to UTC to avoid installation interruption."
+        file_log "WARNING" "Server's timezone set to UTC to avoid installation interruption. Change this after the script completes."
+        file_log "INFO" "Installing $COMMON_PACKAGES $LINUX_ONLY_PACKAGES using apt..."
         # shellcheck disable=SC2086
-        output=$(DEBIAN_FRONTEND=noninteractive apt-get update -y && apt-get install -y --no-install-recommends $PACKAGE_NAME 2>&1)
-        ret=$?
-    elif [ -f /etc/fedora-release ]; then
-        # Fedora
-        file_log "INFO" "Installing $PACKAGE_NAME using dnf..."
+        output=$(DEBIAN_FRONTEND=noninteractive apt-get update -y && apt-get install -y --no-install-recommends $COMMON_PACKAGES $LINUX_ONLY_PACKAGES 2>&1)
+        command_status=$?
+    elif [ -f /etc/fedora-release ]; then # Fedora
+        file_log "INFO" "Installing $COMMON_PACKAGES $LINUX_ONLY_PACKAGES using dnf..."
         # shellcheck disable=SC2086
-        output=$(dnf makecache && dnf install -y $PACKAGE_NAME 2>&1)
-        ret=$?
-    elif [ -f /etc/freebsd-update.conf ]; then
-        # FreeBSD
-        file_log "INFO" "Installing $PACKAGE_NAME using pkg..."
+        output=$(dnf makecache >/dev/null 2>&1 && dnf install -y $COMMON_PACKAGES $LINUX_ONLY_PACKAGES 2>&1)
+        command_status=$?
+    elif [ -f /etc/SuSE-release ] || [ -f /etc/SUSE-brand ] || command -v zypper >/dev/null 2>&1; then # SUSE
+        file_log "INFO" "Installing $COMMON_PACKAGES $LINUX_ONLY_PACKAGES using zypper..."
         # shellcheck disable=SC2086
-        output=$(pkg update && pkg install -y $PACKAGE_NAME 2>&1)
-        ret=$?
+        output=$(zypper refresh >/dev/null 2>&1 && zypper install -y $COMMON_PACKAGES $LINUX_ONLY_PACKAGES 2>&1)
+        command_status=$?
+    elif [ -f /etc/arch-release ] || command -v pacman >/dev/null 2>&1; then # Arch Linux
+        file_log "INFO" "Installing $COMMON_PACKAGES $LINUX_ONLY_PACKAGES using pacman..."
+        # shellcheck disable=SC2086
+        output=$(pacman -Sy >/dev/null 2>&1 && pacman -S --noconfirm $COMMON_PACKAGES $LINUX_ONLY_PACKAGES 2>&1)
+        command_status=$?
+    elif [ -f /etc/freebsd-update.conf ]; then # FreeBSD
+        file_log "INFO" "Installing $COMMON_PACKAGES using pkg..."
+        # shellcheck disable=SC2086
+        output=$(pkg update && pkg install -y $COMMON_PACKAGES 2>&1)
+        command_status=$?
     else
         file_log "ERROR" "Unsupported operating system"
         return 1
     fi
 
-    # Log the output if any
-    if [ -n "$output" ]; then
-        file_log "INFO" "Package installation output: $output"
-    fi
+    file_log "INFO" "Applications installation output: $output"
 
-    # Handle the return status
-    if [ $ret -ne 0 ]; then
-        file_log "ERROR" "Failed to install package: $PACKAGE_NAME"
+    if [ $command_status -ne 0 ]; then
+        console_log "SUCCESS" "Installed all required applications"
+        file_log "ERROR" "Failed to install applications"
         return 1
+    else
+        file_log "SUCCESS" "Installed applications"
     fi
-
-    file_log "SUCCESS" "Successfully installed package: $PACKAGE_NAME"
-    return 0
 }
 
 configure_ufw() {
