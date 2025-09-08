@@ -312,45 +312,68 @@ revert_create_user() {
 }
 
 create_user() {
-    # Check if username already exists
-    if id "$USERNAME" >/dev/null 2>&1; then
-        file_log "WARNING" "User $USERNAME already exists"
-        return 1
-    fi
+    console_log "INFO" "Creating user $USERNAME..."
+    file_log "INFO" "Creating user $USERNAME"
 
     # Generate a 15-character random password
     USER_PASSWORD=$(head -c 12 /dev/urandom | base64 | tr -dc "[:alnum:]" | head -c 15)
 
-    file_log "INFO" "Creating user $USERNAME"
-    output=$(printf '%s\n%s\n' "${USER_PASSWORD}" "${USER_PASSWORD}" | adduser "$USERNAME" -q --gecos "First Last,RoomNumber,WorkPhone,HomePhone" 2>&1)
+    if command -v pw >/dev/null 2>&1; then
+        # FreeBSD
+        output=$(pw useradd "$USERNAME" -m -w yes && printf '%s\n' "$USER_PASSWORD" | pw usermod "$USERNAME" -h 0 2>&1)
+        command_status=$?
+    else
+        # Linux
+        output=$(useradd -m "$USERNAME" 2>&1 && printf '%s\n%s\n' "$USER_PASSWORD" "$USER_PASSWORD" | passwd "$USERNAME" 2>&1)
+        command_status=$?
+    fi
 
-    # shellcheck disable=SC2181
-    if [ $? -ne 0 ]; then
+    file_log "INFO" "$output"
+
+    if [ $command_status -ne 0 ]; then
+        console_log "ERROR" "Failed to create user: $USERNAME"
         file_log "ERROR" "Failed to create user $USERNAME"
+        revert_create_user
         return 1
+    else
+        file_log "SUCCESS" "User created: $USERNAME"
+        console_log "SUCCESS" "User created: $USERNAME"
+        log_credentials "$USERNAME's password: $USER_PASSWORD"
     fi
-    if [ -n "$output" ]; then
-        file_log "INFO" "adduser command output: $output"
+}
+
+user_privileged_access() {
+    file_log "INFO" "Granting privileged access (sudo) to $USERNAME"
+    console_log "INFO" "Granting privileged access (sudo) to $USERNAME"
+
+    if getent group wheel >/dev/null 2>&1; then
+        if command -v pw >/dev/null 2>&1; then # FreeBSD
+            SUDOERS_DIR="/usr/local/etc/sudoers.d"
+            output=$(pw groupmod wheel -m "$USERNAME" 2>&1)
+            command_status=$?
+        else # Fedora, RHEL, SUSE, Arch
+            SUDOERS_DIR="/etc/sudoers.d/"
+            output=$(usermod -aG wheel "$USERNAME" 2>&1)
+            command_status=$?
+        fi
+
+        echo "%wheel ALL=(ALL) ALL" >"$SUDOERS_DIR"/wheel
+    elif getent group sudo >/dev/null 2>&1; then # Debian, Ubuntu
+        output=$(usermod -aG sudo "$USERNAME" 2>&1)
+        command_status=$?
     fi
 
-    output=$(usermod -aG sudo "$USERNAME" 2>&1)
+    file_log "INFO" "$output"
 
-    # shellcheck disable=SC2181
-    if [ $? -ne 0 ]; then
-        console_log "WARNING" "Failed to add user $USERNAME to sudo group"
-        file_log "WARNING" "Failed to add user $USERNAME to sudo group"
+    if [ "$command_status" -ne 0 ]; then
+        console_log "ERROR" "Failed to grant privileged access to $USERNAME"
+        file_log "ERROR" "Failed to grant privileged access to $USERNAME"
+        console_log "WARNING" "From $USERNAME, use [su -] to login to root & perform special operations"
+        file_log "WARNING" "From $USERNAME, use [su -] to login to root & perform special operations"
+    else
+        file_log "SUCCESS" "$USERNAME granted privileged access"
+        console_log "SUCCESS" "$USERNAME granted privileged access"
     fi
-
-    if [ -n "$output" ]; then
-        file_log "INFO" "usermod command output: $output"
-    fi
-
-    # Log user creation details
-    file_log "SUCCESS" "User created: $USERNAME"
-    console_log "SUCCESS" "User created: $USERNAME"
-    log_credentials "$USERNAME's - Password: $USER_PASSWORD"
-
-    return 0
 }
 
 generate_ssh_key() {
@@ -756,9 +779,12 @@ main() {
 
     # Step 2: Create new user
     if [ -n "$USERNAME" ]; then
-        console_log "INFO" "Creating user..."
-        create_user
-        # Continue regardless of any errors
+        if ! create_user; then
+            return 1 # Abort on error
+        fi
+        if ! user_privileged_access; then
+            return 1 # Abort on error
+        fi
     fi
 
     # Step 3: Generate SSH key for user
