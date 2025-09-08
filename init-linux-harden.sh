@@ -441,21 +441,51 @@ generate_ssh_key() {
     log_credentials "$(cat "$key_path.pub")"
 }
 
-    return 0
+revert_ssh_config_changes() {
+    # Revert to backup and try restarting again
+    console_log "INFO" "Reverting to backup configuration..."
+    file_log "INFO" "Reverting to backup configuration from: $SSH_CONFIG_BACKUP_FILE"
+
+    if ! cp "$SSH_CONFIG_BACKUP_FILE" "$SSHD_CONFIG_FILE"; then
+        console_log "ERROR" "Failed to restore SSH config backup"
+        file_log "ERROR" "Failed to restore SSH config backup"
+        exit 1
+    fi
+
+    # Try restarting SSH with original config
+    if manage_service sshd restart || manage_service ssh restart; then
+        console_log "SUCCESS" "SSH service restarted with original configuration"
+        file_log "SUCCESS" "SSH service restarted with original configuration"
+        exit 1
+    fi
+
+    console_log "ERROR" "Failed to restart SSH service even with original configuration"
+    file_log "ERROR" "Failed to restart SSH service even with original configuration"
+    exit 1
 }
 
 update_ssh_setting() {
     setting="$1"
     value="$2"
 
-    # Comment out existing setting if found
-    output=$(sed -i "s/^${setting}/#${setting}/" "$SSHD_CONFIG" 2>&1)
-    if [ -n "$output" ]; then
-        file_log "INFO" "sed command output: $output"
+    file_log "INFO" "Updating $SSHD_CONFIG_FILE [ $setting $value ]"
+
+    # Comment out existing setting if enabled
+    # New settings are always appended to the end of file
+    output=$(sed -i.tmp "s/^${setting}/#${setting}/" "$SSHD_CONFIG_FILE" 2>&1)
+    command_status=$?
+    rm -f "$SSHD_CONFIG_FILE.tmp" >/dev/null 2>&1
+
+    if [ $command_status -ne 0 ]; then
+        console_log "ERROR" "Updating SSH configuration [ $setting $value ] failed"
+        file_log "ERROR" "Updating SSH configuration [ $setting $value ] failed: $output"
+        revert_ssh_config_changes
     fi
 
+    file_log "INFO" "$output"
+
     # Add new setting at the end of file
-    echo "${setting} ${value}" >>"$SSHD_CONFIG"
+    echo "${setting} ${value}" >>"$SSHD_CONFIG_FILE"
     file_log "INFO" "Updated SSH setting: ${setting} ${value}"
 }
 
@@ -463,21 +493,21 @@ harden_ssh_config() {
     console_log "INFO" "Configuring SSH hardening settings..."
     file_log "INFO" "Starting SSH configuration hardening..."
 
-    SSHD_CONFIG="/etc/ssh/sshd_config"
+    SSHD_CONFIG_FILE="/etc/ssh/sshd_config"
 
-    if [ ! -f "$SSHD_CONFIG" ]; then
-        console_log "ERROR" "SSH config file not found at $SSHD_CONFIG"
-        file_log "ERROR" "SSH config file not found at $SSHD_CONFIG"
+    if [ ! -f "$SSHD_CONFIG_FILE" ]; then
+        console_log "ERROR" "SSH config file not found at $SSHD_CONFIG_FILE"
+        file_log "ERROR" "SSH config file not found at $SSHD_CONFIG_FILE"
         return 1
     fi
 
     # Create backup with timestamps
-    BACKUP_FILE="${SSHD_CONFIG}.bak.${TIMESTAMP}"
-    output=$(cp "$SSHD_CONFIG" "$BACKUP_FILE" 2>&1)
+    SSH_CONFIG_BACKUP_FILE="${SSHD_CONFIG_FILE}.bak.${TIMESTAMP}"
+    output=$(cp "$SSHD_CONFIG_FILE" "$SSH_CONFIG_BACKUP_FILE" 2>&1)
     if [ -n "$output" ]; then
         file_log "INFO" "cp command output: $output"
     fi
-    file_log "INFO" "Created backup of sshd_config at: $BACKUP_FILE"
+    file_log "INFO" "Created backup of sshd_config at: $SSH_CONFIG_BACKUP_FILE"
 
     # Update SSH settings
     update_ssh_setting "PermitRootLogin" "no"
@@ -490,34 +520,14 @@ harden_ssh_config() {
 
     # Restart SSH service
     if manage_service sshd restart || manage_service ssh restart; then
-        console_log "SUCCESS" "SSH service restarted successfully"
-        file_log "SUCCESS" "SSH service restarted successfully"
+        console_log "SUCCESS" "SSH service restarted"
+        file_log "SUCCESS" "SSH service restarted"
         return 0
+    else
+        console_log "ERROR" "Failed to restart SSH service"
+        file_log "ERROR" "Failed to restart SSH service"
+        revert_ssh_config_changes
     fi
-
-    console_log "ERROR" "Failed to restart SSH service"
-    file_log "ERROR" "Failed to restart SSH service"
-
-    # Revert to backup and try restarting again
-    console_log "INFO" "Reverting to backup configuration..."
-    file_log "INFO" "Reverting to backup configuration from: $BACKUP_FILE"
-
-    if ! cp "$BACKUP_FILE" "$SSHD_CONFIG"; then
-        console_log "ERROR" "Failed to restore SSH config backup"
-        file_log "ERROR" "Failed to restore SSH config backup"
-        exit 1
-    fi
-
-    # Try restarting SSH with original config
-    if manage_service sshd restart || manage_service ssh restart; then
-        console_log "SUCCESS" "SSH service restarted successfully with original configuration"
-        file_log "SUCCESS" "SSH service restarted successfully with original configuration"
-        exit 1
-    fi
-
-    console_log "ERROR" "Failed to restart SSH service even with original configuration"
-    file_log "ERROR" "Failed to restart SSH service even with original configuration"
-    exit 1
 }
 
 install_package() {
@@ -796,7 +806,7 @@ main() {
 
     # Step 4: Configure SSH
     if ! harden_ssh_config; then
-        print_logfile_details
+        console_log "ERROR" "Failed to update ssh configuration to harden it"
         return 1 # Abort on error
     fi
 
