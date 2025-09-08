@@ -259,29 +259,31 @@ manage_service() {
 ###################################### OPERATIONS #########################################
 
 reset_root_password() {
+    console_log "INFO" "Resetting root password..."
     file_log "INFO" "Attempting to reset root password"
+
     ROOT_PASSWORD=$(head -c 12 /dev/urandom | base64 | tr -dc "[:alnum:]" | head -c 15)
 
-    # Change root password
-    output=$(printf "%s\n%s\n" "${ROOT_PASSWORD}" "${ROOT_PASSWORD}" | passwd root 2>&1)
+    if command -v pw >/dev/null 2>&1; then # FreeBSD
+        output=$(printf '%s\n' "$ROOT_PASSWORD" | pw usermod root -h 0 2>&1)
+        command_status=$?
+    else # Linux
+        output=$(printf "%s\n%s\n" "${ROOT_PASSWORD}" "${ROOT_PASSWORD}" | passwd root 2>&1)
+        command_status=$?
+    fi
+
+    file_log "INFO" "$output"
 
     # shellcheck disable=SC2181
-    if [ $? -ne 0 ]; then
+    if [ $command_status -ne 0 ]; then
         console_log "ERROR" "Failed to reset root password"
         file_log "ERROR" "Failed to reset root password"
-        if [ -n "$output" ]; then
-            file_log "ERROR" "passwd command output: $output"
-        fi
         return 1
+    else
+        console_log "SUCCESS" "Root password reset"
+        file_log "SUCCESS" "Root password reset"
+        log_credentials "New root password: $ROOT_PASSWORD"
     fi
-
-    if [ -n "$output" ]; then
-        file_log "INFO" "passwd command output: $output"
-    fi
-
-    log_credentials "New root password: $ROOT_PASSWORD"
-
-    return 0
 }
 
 revert_create_user() {
@@ -748,9 +750,8 @@ main() {
 
     # Step 1: Reset root password if requested
     if [ "$RESET_ROOT" = true ]; then
-        console_log "INFO" "Resetting root password..."
         reset_root_password
-        # Continue regardless of any errors
+        # Continue regardless of error
     fi
 
     # Step 2: Create new user
