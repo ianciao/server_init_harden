@@ -3,7 +3,7 @@
 SCRIPT_NAME=server-init-harden
 SCRIPT_VERSION=2.2
 TIMESTAMP=$(date '+%Y-%m-%d_%H-%M-%S')
-LOGFILE_NAME="${SCRIPT_NAME}_${TIMESTAMP}.log"
+LOG_FILE_NAME="${SCRIPT_NAME}_${TIMESTAMP}.log"
 START_TIME=$(date +%s)
 
 USERNAME=""
@@ -99,17 +99,16 @@ parse_args() {
 ###########################################################################################
 ###################################### HELPER FUNCTIONS ###################################
 
-create_logfile() {
-    touch "$LOGFILE_NAME"
+create_log_file() {
+    touch "$LOG_FILE_NAME"
 }
 
 file_log() {
     # $1: Log level
     # $2: Log message
 
-    # Write to logfile with timestamps and log level
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    printf "[%s] %s: %s\n" "$timestamp" "$1" "$2" >>"$LOGFILE_NAME"
+    printf "[%s] %s: %s\n" "$timestamp" "$1" "$2" >>"$LOG_FILE_NAME"
 }
 
 console_log() {
@@ -134,7 +133,7 @@ log_credentials() {
     fi
 }
 
-print_opration_details() {
+print_operation_details() {
     echo "Following system hardening operations will be performed:"
 
     if [ "$RESET_ROOT" = true ]; then
@@ -142,7 +141,7 @@ print_opration_details() {
     fi
 
     if [ "$SHOW_CREDENTIALS" = true ]; then
-        echo "    [-s]: Generated passwords, keys are will be displayed on the screen"
+        echo "    [-s]: Passwords, keys are will be displayed on the screen"
     fi
 
     if [ -n "$USERNAME" ]; then
@@ -159,10 +158,10 @@ print_opration_details() {
     echo "    Fail2Ban: Configured to automatically block repeat offender IPs"
 }
 
-print_logfile_details() {
-    printf "\nLog file location: %s\n" "$LOGFILE_NAME"
-    printf "  cat %s        # View log file\n" "$LOGFILE_NAME"
-    printf "  tail -f %s    # Follow log in real-time\n\n" "$LOGFILE_NAME"
+print_log_file_details() {
+    printf "\nLog file location: %s\n" "$LOG_FILE_NAME"
+    printf "  cat %s        # View log file\n" "$LOG_FILE_NAME"
+    printf "  tail -f %s    # Follow log in real-time\n\n" "$LOG_FILE_NAME"
 }
 
 formatted_execution_duration() {
@@ -733,12 +732,12 @@ FAIL2BAN
 }
 
 main() {
-    parse_args "$@"
-    create_logfile
-
+    parse_and_validate_args "$@"
+    create_log_file
     clear
-    print_opration_details
-    print_logfile_details
+
+    print_operation_details
+    print_log_file_details
     echo "Press [Enter] to continue. [Ctrl + c] to cancel..."
     # shellcheck disable=SC2162,SC2034
     read dummy
