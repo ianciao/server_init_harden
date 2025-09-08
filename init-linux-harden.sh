@@ -62,10 +62,16 @@ EOF
     exit 1
 }
 
-parse_args() {
+parse_and_validate_args() {
     while [ "$#" -gt 0 ]; do
         case "$1" in
         -u | --username)
+            # Check if username already exists
+            if id -u "$2" >/dev/null 2>&1; then
+                console_log "ERROR" "User $2 already exists"
+                exit 1
+            fi
+
             # Validate username format
             if [ -n "$2" ] && echo "$2" | grep -qE '^[a-zA-Z][a-zA-Z0-9_-]*$'; then
                 USERNAME="$2"
@@ -287,27 +293,26 @@ reset_root_password() {
 }
 
 revert_create_user() {
+    console_log "INFO" "Attempting to remove user $USERNAME"
     file_log "INFO" "Attempting to remove user $USERNAME"
 
     # Check if the user exists before attempting to remove
     if id "$USERNAME" >/dev/null 2>&1; then
         # Remove user and its home directory
         output=$(userdel -r "$USERNAME" 2>&1)
-        if [ -n "$output" ]; then
-            file_log "INFO" "userdel command output: $output"
-        fi
+        command_status=$?
+        file_log "INFO" "$output"
 
-        # shellcheck disable=SC2181
-        if [ $? -eq 0 ]; then
-            file_log "SUCCESS" "User $USERNAME and home directory removed successfully"
-            return 0
+        if [ $command_status -eq 0 ]; then
+            console_log "SUCCESS" "User $USERNAME and home directory removed"
+            file_log "SUCCESS" "User $USERNAME and home directory removed"
         else
+            console_log "ERROR" "Failed to remove user $USERNAME"
             file_log "ERROR" "Failed to remove user $USERNAME"
-            return 1
         fi
     else
+        console_log "WARNING" "No user $USERNAME found to remove"
         file_log "WARNING" "No user $USERNAME found to remove"
-        return 0
     fi
 }
 
@@ -814,14 +819,9 @@ main() {
     fi
 
     # Step 5: Install required packages
-    console_log "INFO" "Installing required packages..."
-    file_log "INFO" "Installing required packages..."
-    if ! install_package "curl ufw fail2ban"; then
-        console_log "ERROR" "Failed to install required packages"
-        print_logfile_details
+    if ! install_packages; then
         return 1 # Abort on error
     fi
-    console_log "SUCCESS" "Successfully installed all required packages"
 
     # Step 6: Configure UFW
     console_log "INFO" "Configuring UFW..."
