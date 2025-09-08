@@ -377,42 +377,37 @@ user_privileged_access() {
 }
 
 generate_ssh_key() {
-    target_user="$1"
-
-    console_log "INFO" "Generating SSH key for user: $target_user..."
-    file_log "INFO" "Generating SSH key for user: $target_user"
-
-    home_dir=$(eval echo "~$target_user")
-    if [ ! -d "$home_dir" ]; then
-        console_log "ERROR" "Home directory not found for user: $target_user"
-        file_log "ERROR" "Home directory not found for user: $target_user"
-        return 1
-    fi
+    console_log "INFO" "Generating SSH key for $SSH_KEY_USER..."
+    file_log "INFO" "Generating SSH key for $SSH_KEY_USER"
 
     # Create .ssh directory & set proper permissions
+    home_dir=$(eval echo "~$USERNAME")
     ssh_dir="$home_dir/.ssh"
-    if [ ! -d "$ssh_dir" ]; then
-        mkdir -p "$ssh_dir"
-        chown "$target_user:$target_user" "$ssh_dir"
-        chmod 700 "$ssh_dir"
+    if [ ! -d "$home_dir" ]; then
+        console_log "ERROR" "Home directory not found for $SSH_KEY_USER"
+        file_log "ERROR" "Home directory not found for $SSH_KEY_USER"
+        return 1
+    else
+        mkdir -p "$ssh_dir" && chown "$SSH_KEY_USER:$SSH_KEY_USER" "$ssh_dir" && chmod 700 "$ssh_dir" || return 1
         file_log "INFO" "Created .ssh directory: $ssh_dir"
     fi
 
-    # Generate a strong passphrase
+    # Generate passphrase
     key_passphrase=$(head -c 12 /dev/urandom | base64 | tr -dc "[:alnum:]" | head -c 15)
 
-    key_name="id_${target_user}_ed25519"
+    key_name="id_${SSH_KEY_USER}_ed25519"
     key_path="$ssh_dir/$key_name"
 
     # Generate the SSH key
-    file_log "INFO" "Generating SSH key for $target_user"
-    if ! output=$(su -c "ssh-keygen -o -a 1000 -t ed25519 -f '$key_path' -N '$key_passphrase'" - "$target_user" 2>&1); then
-        console_log "ERROR" "Failed to generate SSH key for user: $target_user"
-        file_log "ERROR" "Failed to generate SSH key for user: $target_user"
-        file_log "ERROR" "ssh-keygen output: $output"
+    file_log "INFO" "Generating SSH key for $SSH_KEY_USER"
+    if ! output=$(ssh-keygen -o -a 1000 -t ed25519 -f "$key_path" -N "$key_passphrase" -C "$SSH_KEY_USER" -q 2>&1); then
+        console_log "ERROR" "Failed to generate SSH key for user: $SSH_KEY_USER"
+        file_log "ERROR" "Failed to generate SSH key for user: $SSH_KEY_USER"
+        file_log "ERROR" "$output"
         return 1
     fi
-    file_log "INFO" "SSH key generated successfully for user: $target_user"
+    file_log "INFO" "SSH key generated for user: $SSH_KEY_USER"
+    file_log "INFO" "To change passphrase: ssh-keygen -p -f $key_path -P"
 
     # Set proper permissions for the key
     chmod 600 "$key_path"
@@ -428,23 +423,23 @@ generate_ssh_key() {
 
     # Set proper permissions on authorized_keys
     chmod 400 "$authorized_keys"
-    chown "$target_user:$target_user" "$authorized_keys"
+    chown "$SSH_KEY_USER:$SSH_KEY_USER" "$authorized_keys"
     file_log "INFO" "Added public key to: $authorized_keys"
 
     # Log the key details
-    file_log "INFO" "SSH key generated successfully for user: $target_user"
-    console_log "SUCCESS" "SSH key generated successfully for user: $target_user"
+    file_log "INFO" "SSH key generated for user: $SSH_KEY_USER"
+    console_log "SUCCESS" "SSH key generated for user: $SSH_KEY_USER"
     file_log "SUCCESS" "Key path: $key_path"
 
     console_log "INFO" "Key path: $key_path"
     console_log "INFO" "Authorized keys path: $authorized_keys"
 
-    log_credentials "SSH key details for $target_user:"
     log_credentials "SSH Key passphrase: $key_passphrase"
     log_credentials "Private key content:"
     log_credentials "$(cat "$key_path")"
     log_credentials "Public key content:"
     log_credentials "$(cat "$key_path.pub")"
+}
 
     return 0
 }
@@ -789,18 +784,14 @@ main() {
 
     # Step 3: Generate SSH key for user
     if [ -n "$USERNAME" ]; then
-        if ! generate_ssh_key "$USERNAME"; then
-            console_log "ERROR" "Failed to generate SSH key for new user: $USERNAME"
-            print_logfile_details
-            return 1 # Abort on error
-        fi
+        SSH_KEY_USER="$USERNAME"
     else
-        CURRENT_USER=$(whoami)
-        if ! generate_ssh_key "$CURRENT_USER"; then
-            console_log "ERROR" "Failed to generate SSH key for current user: $CURRENT_USER"
-            print_logfile_details
-            return 1 # Abort on error
-        fi
+        SSH_KEY_USER="$USER"
+    fi
+
+    if ! generate_ssh_key "$SSH_KEY_USER"; then
+        console_log "ERROR" "Failed to generate SSH key for $SSH_KEY_USER"
+        return 1 # Abort on error
     fi
 
     # Step 4: Configure SSH
