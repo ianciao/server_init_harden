@@ -11,27 +11,33 @@ RESET_ROOT=false
 usage() {
     cat <<EOF
 ${SCRIPT_NAME} v${SCRIPT_VERSION}
-A script to harden Linux server security configurations
+Shell script to harden a new Linux/FreeBSD server's security configurations
 
-USAGE:
+SYNOPSIS
     $0 [OPTIONS]
 
-DESCRIPTION:
-    This script performs several security hardening operations on a Linux server:
-    - Hardens SSH configuration (disables root login, password auth)
-    - Creates new user with sudo access (optional)
-    - Generates secure SSH keys
-    - Resets root password (optional)
-    - Configures Fail2ban for intrusion prevention
-    - Sets up Firewalld firewall rules
+DESCRIPTION
+    Following security hardening operations are performed:
+        - Reset root password (optional)
+        - SSH Hardening (disables root login & password auth)
+        - New user with privileged access (optional)
+        - Generate OpenSSH keys for the new user
+        - Sets up Firewalld/pf firewall rules
+        - Configures Fail2ban for intrusion prevention
 
-OPTIONS:
-    -u USERNAME Create a new sudo user with the specified username
+    Require root/sudo privileges
+    Creates backups of each modified configuration files
+    If some operation fails, configurations are reverted
+
+    All operations are logged to: /var/log/{SCRIPT_NAME}_TIMESTAMP.log
+
+OPTIONS
+    -u USERNAME Create new user with privileged (sudo) access
     -r          Reset root password to a secure random value
     -h          Display this help message
 
-EXAMPLES:
-    # Basic hardening (SSH, Fail2ban, Firewalld)
+EXAMPLES
+    # Basic hardening (SSH, Fail2ban, Firewalld/pf)
     $0
 
     # Create new sudo user during hardening
@@ -40,16 +46,7 @@ EXAMPLES:
     # Create new user and reset root password
     $0 -u jay -r
 
-LOGGING:
-    All operations are logged to: /var/log/{SCRIPT_NAME}_TIMESTAMP.log
-    Sensitive information (passwords, keys) are only logged to file by default
-
-NOTES:
-    - Requires root/sudo privileges
-    - Creates backups of modified configuration files
-    - If some operation fails, configurations will be reverted
-
-For bug reports and contributions:
+REPORTING BUGS
     https://github.com/pratiktri/server-init-harden
 EOF
     exit 1
@@ -144,20 +141,20 @@ print_operation_details() {
     fi
 
     echo "    SSH: login to root account will be disabled"
-    echo "    SSH: login can only happen using generated SSH keys"
+    echo "    SSH: can only login using generated SSH keys"
     echo "    Software repository will be updated & required software will be installed"
-    echo "    Firewalld: Firewall will be configured to only allow SSH, HTTP, HTTPS traffic into the server"
+    echo "    Firewalld/pf: Firewall will be configured to only allow SSH, HTTP, HTTPS traffic into the server"
     echo "    Fail2ban: Configured to automatically block repeat offender IPs"
 }
 
 print_log_file_details() {
     echo
-    echo "See logfile for detailed output for each operation."
+    echo "See following log file for detailed output of each operation."
     echo "Location: $LOG_FILE_NAME"
     echo "  tail -f $LOG_FILE_NAME    # Follow log in real-time"
     echo
     echo "WARNING: Credentials WILL be displayed on this screen"
-    echo "WARNING: Save the credentials as they WILL NOT BE SHOWN AGAIN"
+    echo "WARNING: Save the credentials. CREDENTIALS WILL NOT BE SHOWN AGAIN."
 }
 
 formatted_execution_duration() {
@@ -1016,9 +1013,9 @@ configure_fail2ban() {
     fi
 }
 
-print_credentials() {
+print_credentials_and_clean_up() {
     echo
-    echo "#############################################################"
+    echo "#########################################################################################"
 
     if [ "$RESET_ROOT" = "true" ]; then
         echo "New password for root: $ROOT_PASSWORD"
@@ -1040,7 +1037,7 @@ print_credentials() {
 
     echo "SSH public key location: $SSH_KEY_FILE.pub:"
     cat "$SSH_KEY_FILE.pub"
-    echo "#############################################################"
+    echo "########################################################################################"
 }
 
 main() {
