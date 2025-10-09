@@ -1,13 +1,12 @@
 #!/bin/sh
 
 SCRIPT_NAME=server-init-harden
-SCRIPT_VERSION=2.7
-TIMESTAMP=$(date '+%Y-%m-%d_%H-%M-%S')
-LOG_FILE_NAME="${SCRIPT_NAME}_${TIMESTAMP}.log"
+SCRIPT_VERSION=3.1
+TIMESTAMP=$(date '+%Y-%m-%d-%H-%M-%S')
+LOG_FILE_NAME="/var/log/${SCRIPT_NAME}_${TIMESTAMP}.log"
 
 USERNAME=""
 RESET_ROOT=false
-SHOW_CREDENTIALS=false
 
 usage() {
     cat <<EOF
@@ -29,7 +28,6 @@ DESCRIPTION:
 OPTIONS:
     -u USERNAME Create a new sudo user with the specified username
     -r          Reset root password to a secure random value
-    -s          Show sensitive information (passwords, keys) in console output
     -h          Display this help message
 
 EXAMPLES:
@@ -42,13 +40,9 @@ EXAMPLES:
     # Create new user and reset root password
     $0 -u jay -r
 
-    # Show all credentials in console output (less secure)
-    $0 -u jay -s
-
 LOGGING:
-    All operations are logged to: ./${SCRIPT_NAME}_TIMESTAMP.log
+    All operations are logged to: /var/log/{SCRIPT_NAME}_TIMESTAMP.log
     Sensitive information (passwords, keys) are only logged to file by default
-    Use -s flag to also show sensitive information in console output
 
 NOTES:
     - Requires root/sudo privileges
@@ -85,10 +79,6 @@ parse_and_validate_args() {
             RESET_ROOT=true
             shift
             ;;
-        -s)
-            SHOW_CREDENTIALS=true
-            shift
-            ;;
         -h | --help)
             usage
             ;;
@@ -105,7 +95,11 @@ parse_and_validate_args() {
 ###################################### HELPER FUNCTIONS ###################################
 
 create_log_file() {
-    touch "$LOG_FILE_NAME"
+    if [ ! -d "/var/log" ]; then
+        mkdir -p "/var/log"
+    fi
+
+    touch "/var/log/$LOG_FILE_NAME"
 }
 
 file_log() {
@@ -132,10 +126,7 @@ console_log() {
 
 log_credentials() {
     message="$1"
-    file_log "CREDENTIALS" "$message"
-    if [ "$SHOW_CREDENTIALS" = true ]; then
-        console_log "CREDENTIALS" "$message"
-    fi
+    console_log "CREDENTIALS" "$message"
 }
 
 print_operation_details() {
@@ -160,9 +151,13 @@ print_operation_details() {
 }
 
 print_log_file_details() {
-    printf "\nLog file location: %s\n" "$LOG_FILE_NAME"
-    printf "  cat %s        # View log file\n" "$LOG_FILE_NAME"
-    printf "  tail -f %s    # Follow log in real-time\n\n" "$LOG_FILE_NAME"
+    echo
+    echo "See logfile for detailed output for each operation."
+    echo "Location: $LOG_FILE_NAME"
+    echo "  tail -f $LOG_FILE_NAME    # Follow log in real-time"
+    echo
+    echo "WARNING: Credentials WILL be displayed on this screen"
+    echo "WARNING: Save the credentials as they WILL NOT BE SHOWN AGAIN"
 }
 
 formatted_execution_duration() {
@@ -393,29 +388,29 @@ generate_ssh_key() {
     fi
 
     # Generate passphrase
-    key_passphrase=$(head -c 12 /dev/urandom | base64 | tr -dc "[:alnum:]" | head -c 15)
+    SSH_KEY_PASSPHRASE=$(head -c 12 /dev/urandom | base64 | tr -dc "[:alnum:]" | head -c 15)
 
     key_name="id_${SSH_KEY_USER}_ed25519"
-    key_path="$ssh_dir/$key_name"
+    SSH_KEY_FILE="$ssh_dir/$key_name"
 
     # Generate the SSH key
     file_log "INFO" "Generating SSH key for $SSH_KEY_USER"
-    if ! output=$(ssh-keygen -o -a 1000 -t ed25519 -f "$key_path" -N "$key_passphrase" -C "$SSH_KEY_USER" -q 2>&1); then
-        console_log "ERROR" "Failed to generate SSH key for user: $SSH_KEY_USER"
-        file_log "ERROR" "Failed to generate SSH key for user: $SSH_KEY_USER"
+    if ! output=$(ssh-keygen -o -a 1000 -t ed25519 -f "$SSH_KEY_FILE" -N "$SSH_KEY_PASSPHRASE" -C "$SSH_KEY_USER" -q 2>&1); then
+        console_log "ERROR" "Failed to generate SSH key for user [ $SSH_KEY_USER ]"
+        file_log "ERROR" "Failed to generate SSH key for user [ $SSH_KEY_USER ]"
         file_log "ERROR" "$output"
         return 1
     fi
-    file_log "INFO" "SSH key generated for user: $SSH_KEY_USER"
-    file_log "INFO" "To change passphrase: ssh-keygen -p -f $key_path -P"
+    file_log "INFO" "SSH key generated for $SSH_KEY_USER"
+    file_log "INFO" "To change passphrase: ssh-keygen -p -f $SSH_KEY_FILE -P"
 
     # Set proper permissions for the key
-    chmod 600 "$key_path"
-    chmod 644 "$key_path.pub"
+    chmod 600 "$SSH_KEY_FILE"
+    chmod 644 "$SSH_KEY_FILE.pub"
 
     # Append public key to authorized_keys
     authorized_keys="$ssh_dir/authorized_keys"
-    if ! cat "$key_path.pub" >>"$authorized_keys"; then
+    if ! cat "$SSH_KEY_FILE.pub" >>"$authorized_keys"; then
         console_log "ERROR" "Failed to append public key to authorized_keys"
         file_log "ERROR" "Failed to append public key to authorized_keys"
         return 1
@@ -427,18 +422,18 @@ generate_ssh_key() {
     file_log "INFO" "Added public key to: $authorized_keys"
 
     # Log the key details
-    file_log "INFO" "SSH key generated for user: $SSH_KEY_USER"
-    console_log "SUCCESS" "SSH key generated for user: $SSH_KEY_USER"
-    file_log "SUCCESS" "Key path: $key_path"
+    file_log "INFO" "SSH key generated for [ $SSH_KEY_USER ]"
+    console_log "SUCCESS" "SSH key generated for [ $SSH_KEY_USER ]"
+    file_log "SUCCESS" "Key path: [ $SSH_KEY_FILE ]"
 
-    console_log "INFO" "Key path: $key_path"
-    console_log "INFO" "Authorized keys path: $authorized_keys"
+    console_log "INFO" "Key path: [ $SSH_KEY_FILE ]"
+    console_log "INFO" "Authorized keys path: [ $authorized_keys ]"
 
-    log_credentials "SSH Key passphrase: $key_passphrase"
+    log_credentials "SSH Key passphrase: [ $SSH_KEY_PASSPHRASE ]"
     log_credentials "Private key content:"
-    log_credentials "$(cat "$key_path")"
+    log_credentials "[$(cat "$SSH_KEY_FILE")]"
     log_credentials "Public key content:"
-    log_credentials "$(cat "$key_path.pub")"
+    log_credentials "[$(cat "$SSH_KEY_FILE.pub")]"
 }
 
 revert_ssh_config_changes() {
@@ -1021,6 +1016,33 @@ configure_fail2ban() {
     fi
 }
 
+print_credentials() {
+    echo
+    echo "#############################################################"
+
+    if [ "$RESET_ROOT" = "true" ]; then
+        echo "New password for root: $ROOT_PASSWORD"
+        echo
+    fi
+
+    if [ -n "$USERNAME" ]; then
+        echo "New user: $USERNAME"
+        echo "New user password: $USER_PASSWORD"
+        echo
+    fi
+
+    echo "SSH private key:"
+    cat "$SSH_KEY_FILE" && rm "$SSH_KEY_FILE" >/dev/null 2>&1
+    echo
+
+    echo "SSH Key's Passphrase: $SSH_KEY_PASSPHRASE"
+    echo
+
+    echo "SSH public key location: $SSH_KEY_FILE.pub:"
+    cat "$SSH_KEY_FILE.pub"
+    echo "#############################################################"
+}
+
 main() {
     parse_and_validate_args "$@"
     create_log_file
@@ -1104,6 +1126,7 @@ main() {
     file_log "INFO" "Total execution time: [ $FORMATTED_DURATION ]"
 
     print_log_file_details
+    print_credentials_and_clean_up
     return 0
 }
 
