@@ -1,181 +1,153 @@
 # Linux Server Hardener
 
-A robust POSIX-compliant shell script that automates security hardening for Linux systems through SSH hardening, intrusion detection, firewall configuration, and granular access controls. This production-grade solution ensures consistent security baselines while maintaining compatibility across major Linux distributions.
+POSIX-compliant shell script that automates server security hardening on a new Linux/FreeBSD server.
+The script is intended to be executed immediately after you have access to a new Linux/FreeBSD server (most likely a VPS) as **root**.
 
-## **WARNING**
+## Usage
 
-This script can potentially make your server inaccessible if not used properly. Make sure you:
+- WARNING: Make sure you:
+    - Have root privilege to the server
+    - Have 2 ssh sessions active to the server:
+        - 1st for running the script
+        - 2nd for viewing script's logs and to recover from it's failure
+    - SAVE ALL CREDENTIALS SHOWN POST EXECUTION: THEY AREN'T SAVED ANYWHERE AND WON'T BE DISPLAYED AGAIN
 
--   Have a backup access method
--   Review the script before running
--   Keep the terminal session open until completion
--   Save all credentials shown/logged during execution
+- Options:
+    - `-r`: Reset root password
+    - `-u USERNAME`: Create a new user with sudo privileges
+    - `-h`: Display help message
 
-### IMPORTANT: SSH Key Management
+```sh
+curl -L -o harden.sh https://sot.li/hardensh
+cat harden.sh          # review content
+chmod +x harden.sh
 
-After running the script, you MUST:
+# Harden server (SSH, Fail2ban, Firewalld/pf)
+./harden.sh
 
-1. **Save the SSH Private Key**
+# Create new privileged (sudo) user & harden server
+./harden.sh -u jay
 
-    - Copy the entire private key content (starts with `-----BEGIN OPENSSH PRIVATE KEY-----`)
-    - Store it securely on your local machine as `id_ed25519` or similar
-    - Keep it strictly private and NEVER share it with anyone
-    - Without this key, you cannot access your server
+# Create new privileged user, reset root password & harden server
+./harden.sh -r -u jay
+```
 
-2. **Save the Key Passphrase**
+- Quick & dirty execute:
 
-    - Store the generated passphrase securely
-    - Required every time you use the private key
-    - Keep it secret like a password
-    - Cannot be recovered if lost
+    ```sh
+    curl -sL https://sot.li/hardensh | sh -s -- -r -u jay
+    ```
 
-3. **Public Key (Optional Save)**
-    - The part ending in `.pub` (starts with `ssh-ed25519`)
-    - Already configured on the server
-    - Can be shared safely with others
-    - Used for adding access to other servers
+    > There are risks involved with running scripts directly from web, as done above. Everyone does it anyways; you have been warned.
 
-Without the private key and passphrase, you will permanently lose access to your server!
+## Post Installation
+
+- Linux:
+
+    ```sh
+    # Firewalld: Check firewall status
+    sudo firewall-cmd --status && sudo firewall-cmd --list-services
+
+    # Firewalld: Allow a port/service (dhcp)
+    sudo firewall-cmd --add-service=dhcp --permanent
+
+    # Firewalld: Block a port/service (http)
+    sudo firewall-cmd --remove-service=http --permanent
+
+    # Fail2ban: List all active jails
+    sudo fail2ban-client status
+
+    # Fail2ban: List all IP banned by a jail (sshd)
+    sudo fail2ban-client status sshd
+
+    # Fail2ban: Manually ban an IP
+    sudo fail2ban-client set sshd banip 192.0.2.1
+
+    # Fail2ban: Manually un-ban an IP
+    sudo fail2ban-client set sshd unbanip 192.0.2.1
+    ```
+
+- FreeBSD:
+
+    ```sh
+    # pf: active rules
+    sudo pfctl -s rules
+
+    # pf: Allow or block services
+    # Edit /etc/pf.conf & add the port/service to the comma separated list in { }
+    #
+    # OR use the following command (allows dhcp)
+    sed -i.bak 's/[[:space:]]}/, dhcp }/' /etc/pf.conf && pfctl -nf /etc/pf.conf && pfctl -vvf /etc/pf.conf
+
+    # Fail2ban: List all active jails
+    sudo fail2ban-client status
+
+    # Fail2ban: List all IP banned by a jail (sshd)
+    sudo fail2ban-client status sshd
+
+    # Fail2ban: Manually ban an IP
+    sudo fail2ban-client set sshd banip 192.0.2.1
+
+    # Fail2ban: Manually un-ban an IP
+    sudo fail2ban-client set sshd unbanip 192.0.2.1
+    ```
 
 ## Status
 
 Tested and working on:
 
--   Debian 11, 12
--   Ubuntu 22.04, 24.04, 24.10
+- Linux:
+    - Debian 12, 13
+    - Fedora 42
+    - Ubuntu 22.04, 24.04, 24.10
+- FreeBSD:
+    - FreeBSD 14.3
 
-## What's New in v2.0 🚀
+## What does it do exactly?
 
-### Improved Logging 🎯
+Depending on options chosen & OS (Linux vs FreeBSD) it does the following:
 
--   **Sensitive Data Control**: New `-s` flag to control credential display
--   Separate console/file logging levels
--   Better organized log file structure
--   More detailed operation logging
+1. Reset `root` users password (optional)
+2. Create new user & give it `sudo` privileges (optional)
+3. Generate OpenSSH (ed25519) keys (public & private) for the user with a passphrase
+4. Updates SSH configuration to:
+    a. Disable `root` login
+    b. Disable password login
+    c. Enable key-only login
+5. Installs applications:
+    a. Linux: curl, sudo, firewalld, fail2ban
+    b. FreeBSD: curl, sudo, fail2ban
+6. Configures firewall which allows incoming sshd, http, https traffic & blocks everything else:
+    a. Linux: `firewalld` is used as firewall
+    b. FreeBSD: `pf` is used as firewall
+7. Configures `fail2ban` to with following jails (FreeBSD: `pf` table is used to block IPs):
+    a. sshd
+    b. nginx-botsearch
+    c. nginx-http-auth
+    d. nginx-limit-req
+    e. haproxy-http-auth
+    f. recidive
+8. Displays following on console:
+    a. New root password
+    b. New user name & password
+    c. SSH Private & Public keys
+    d. SSH Passphrase
+9. Deletes SSH Private Key from server
 
-### Documentation 📚
+### Why `firewalld` and not `ufw`?
 
--   **Better Examples**: More usage examples and scenarios
--   **Clear Warnings**: Improved warning messages and precautions
-
-### OS Support 🐧
-
--   Removed unnecessary OS Restrictions
-
--   Tested on the following distributions:
-    -   Ubuntu 22.04, 24.04, 24.10
-    -   Debian 11, 12
-    -   Fedora 40, 41 (in testing)
-    -   FreeBSD (in future)
-
-### Test with Docker 🐳
-
--   **Test Commands**: Added various test scenarios
--   **Multi-distro**: Support for testing across distributions
--   **Quick Testing**: Faster feedback loop for testing changes
-
-## Usage
-
-### Requirements
-
--   Root/sudo privileges
--   One of the supported Linux distributions:
-    -   Debian 11/12
-    -   Ubuntu 20.04/22.04/24.04
-    -   Fedora 40/41
-
-### Options
-
--   `-u USERNAME`: Create a new sudo user
--   `-r`: Reset root password to secure random value
--   `-s`: Show sensitive information in console output
--   `-h`: Display help message
-
-```bash
-# Basic hardening (SSH, Fail2ban, UFW, create & secure SSH key for logged in user)
-# Default behavior - no user creation, no root reset, no show credentials info
-# Use it when VPS already disabled root password and created new user during setup (e.g. NetCup)
-./init-linux-harden.sh
-
-# Create new sudo user during hardening
-# Use it when VPS already disabled root password, but no new user created
-./init-linux-harden.sh -u jay
-
-# Create new user and reset root password
-./init-linux-harden.sh -u jay -r
-
-# Show all credentials in console output (less secure)
-./init-linux-harden.sh -u jay -s
-```
-
-### Post Installation
-
--   Check if the services are working properly
-
-```bash
-sudo ufw status
-
-sudo fail2ban-client status
-```
-
-## Features
-
-The script performs comprehensive security hardening:
-
-### SSH Hardening
-
--   Uses Ed25519 SSH keys (stronger than RSA)
--   Disables root login
--   Disables password authentication
--   Enforces public key authentication
--   Creates backup of original config
--   Secures authorized_keys file with proper permissions
-
-### Fail2ban Protection
-
--   Protects against brute force attempts
--   Configures SSH jail (1 day ban time)
--   Configures recidive jail (30 days for repeat offenders)
--   Configures nginx-http-auth jail
--   Auto-excludes server's public IP
--   TIP: Unban using `fail2ban-client set sshd unbanip <IP>`
-
-### UFW Firewall
-
--   Enables and configures UFW
--   Allows SSH (22), HTTP (80), HTTPS (443)
--   Blocks all other incoming traffic
--   Allows all outgoing traffic
--   TIP: Add new rules with `ufw allow <service>`
-
-### User Management
-
--   Option to reset root password
--   Creates new sudo user (optional)
--   Generates secure random password
--   Creates Ed25519 SSH key pair with 1000 KDF rounds
--   Configures authorized_keys securely
--   TIP: Copy the user credentials from the log file after the script completes
-
-### Backup and Recovery
-
--   Creates backups of all modified configuration files
--   Automatic recovery if operations fail
--   Restarts affected services as needed
--   Detailed logging for troubleshooting
-
-### Logging
-
--   All operations logged to `./${SCRIPT_NAME}_TIMESTAMP.log`
--   Sensitive information only logged to file by default
--   Optional console display with `-s` flag
--   Execution time tracking
--   Separate console/file logging levels
+- `firewalld` is default firewall on Rocky Linux, SUSE, Fedora, RHEL
+- Can use similar commands like `ufw` for basic administration
+- Comes with a lot more power when needed
 
 ## To-do
 
--   [ ] Test on Fedora 40, 41 on VPS and not on Docker (it fails on Docker right now)
--   [ ] Test on FreeBSD
+- [ ] LUKS encryption
+- [ ] Unattended-updates if distro supports it (do it during installations)
+- [ ] Layer 2 security: Midtier: OSSEC: Mid tier attack prevention
+- [ ] Audit: Lynis: System security audits
+- [ ] Monitoring + Alerts: Goaccess???
+- [ ] Backups: ???
 
 ## License
 

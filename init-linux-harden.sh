@@ -37,17 +37,17 @@ OPTIONS
     -h          Display this help message
 
 EXAMPLES
-    # Basic hardening (SSH, Fail2ban, Firewalld/pf)
+    # Harden server (SSH, Fail2ban, Firewalld/pf)
     $0
 
-    # Create new sudo user during hardening
+    # Create new privileged (sudo) user & harden server
     $0 -u jay
 
-    # Create new user and reset root password
-    $0 -u jay -r
+    # Create new privileged user, reset root password & harden server
+    $0 -r -u jay
 
-REPORTING BUGS
-    https://github.com/pratiktri/server-init-harden
+REPORTING BUG
+    https://github.com/pratiktri/server-init-harden/issues/new
 EOF
     exit 1
 }
