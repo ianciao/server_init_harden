@@ -618,7 +618,6 @@ configure_firewall_linux() {
 }
 
 configure_firewall_freebsd() {
-    # Path to the new pf configuration file
     PF_CONF_FILE="/etc/pf.conf"
 
     # Create backup with timestamps
@@ -944,14 +943,14 @@ configure_fail2ban_freebsd() {
 
     if [ -f "$PF_CONF_FILE" ]; then
         PF_CONF_BACKUP_FILE="${PF_CONF_FILE}.bak.${TIMESTAMP}"
-        output=$(mv "$PF_CONF_FILE" "$PF_CONF_BACKUP_FILE" 2>&1)
+        output=$(cp "$PF_CONF_FILE" "$PF_CONF_BACKUP_FILE" 2>&1)
         file_log "INFO" "Backed up existing configuration to $PF_CONF_BACKUP_FILE"
         file_log "INFO" "$output"
     fi
 
     # Add fail2ban table to PF configuration
     if ! grep -q 'table <f2b>' "$PF_CONF_FILE" 2>/dev/null; then
-        cat >>"$PF_CONF_FILE" <<'EOF'
+        cat <<'EOF' >>"$PF_CONF_FILE"
 
 # Fail2ban table and anchor
 table <f2b> persist
