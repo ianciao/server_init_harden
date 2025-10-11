@@ -509,8 +509,13 @@ harden_ssh_config() {
     console_log "SUCCESS" "SSH configuration hardening completed"
     file_log "SUCCESS" "SSH configuration hardening completed"
 
+    # Test configuration syntax
+    output=$(sshd -T 2>&1)
+    command_status=$?
+    file_log "INFO" "$output"
+
     # Restart SSH service
-    if manage_service sshd restart || manage_service ssh restart; then
+    if [ $command_status -eq 0 ] && { manage_service sshd restart || manage_service ssh restart; }; then
         console_log "SUCCESS" "SSH service restarted"
         file_log "SUCCESS" "SSH service restarted"
     else
@@ -532,7 +537,7 @@ install_packages() {
     # Detect the package manager and OS
     if [ -f /etc/debian_version ] || [ -f /etc/ubuntu_version ]; then # Debian/Ubuntu
         # Don't let timezone setting stop installation: make UTC server's timezone
-        ln -fs /usr/share/zoneinfo/UTC /etc/localtime >/dev/null
+        ln -fs /usr/share/zoneinfo/UTC /etc/localtime >/dev/null 2>&1
         console_log "WARNING" "Timezone set to UTC to avoid installation interruption"
         file_log "WARNING" "Timezone set to UTC to avoid installation interruption. Change this after the script completes."
         file_log "INFO" "Installing $COMMON_PACKAGES $LINUX_ONLY_PACKAGES using apt..."
