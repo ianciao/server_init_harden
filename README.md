@@ -1,16 +1,16 @@
 # Linux Server Hardener
 
 POSIX-compliant shell script that automates server security hardening on a new Linux/FreeBSD server.
-The script is intended to be executed immediately after you have access to a new Linux/FreeBSD server (most likely a VPS) as **root**.
+It is intended to be executed **interactively** as `root`.
 
 ## Usage
 
 - WARNING: Make sure you:
-    - Have root privilege to the server
+    - Have root access to the server
     - Have 2 ssh sessions active to the server:
-        - 1st for running the script
-        - 2nd for viewing script's logs and to recover from it's failure
-    - SAVE ALL CREDENTIALS SHOWN POST EXECUTION: THEY AREN'T SAVED ANYWHERE AND WON'T BE DISPLAYED AGAIN
+        - 1st: for running the script
+        - 2nd: for viewing script's logs and to recover from it's failure
+    - SAVE ALL CREDENTIALS SHOWN POST EXECUTION: THEY AREN'T SAVED ANYWHERE AND WON'T BE DISPLAYED AGAIN.
 
 - Options:
     - `-r`: Reset root password
@@ -22,7 +22,7 @@ curl -L -o harden.sh https://sot.li/hardensh
 cat harden.sh          # review content
 chmod +x harden.sh
 
-# Harden server (SSH, Fail2ban, Firewalld/pf)
+# Harden server: SSH hardening, Fail2ban, Firewalld/pf
 ./harden.sh
 
 # Create new privileged (sudo) user & harden server
@@ -32,13 +32,13 @@ chmod +x harden.sh
 ./harden.sh -r -u jay
 ```
 
-- Quick & dirty execute:
+- Quick & Dirty:
 
     ```sh
     curl -sL https://sot.li/hardensh | sh -s -- -r -u jay
     ```
 
-    > There are risks involved with running scripts directly from web, as done above. Everyone does it anyways; you have been warned.
+    > There are security risks involved with running scripts directly from web, as done above. Everyone does it; but, you have been warned.
 
 ## Post Installation
 
@@ -48,16 +48,16 @@ chmod +x harden.sh
     # Firewalld: Check firewall status
     sudo firewall-cmd --status && sudo firewall-cmd --list-services
 
-    # Firewalld: Allow a port/service (dhcp)
-    sudo firewall-cmd --add-service=dhcp --permanent
+    # Firewalld: Allow a port/service (e.g., dhcp)
+    sudo firewall-cmd --permanent --add-service=dhcp
 
-    # Firewalld: Block a port/service (http)
-    sudo firewall-cmd --remove-service=http --permanent
+    # Firewalld: Block a port/service (e.g., http)
+    sudo firewall-cmd --permanent --remove-service=http
 
     # Fail2ban: List all active jails
     sudo fail2ban-client status
 
-    # Fail2ban: List all IP banned by a jail (sshd)
+    # Fail2ban: List all IP banned by a jail (e.g., sshd)
     sudo fail2ban-client status sshd
 
     # Fail2ban: Manually ban an IP
@@ -70,19 +70,19 @@ chmod +x harden.sh
 - FreeBSD:
 
     ```sh
-    # pf: active rules
+    # pf: Show active rules
     sudo pfctl -s rules
 
     # pf: Allow or block services
-    # Edit /etc/pf.conf & add the port/service to the comma separated list in { }
+    # Edit /etc/pf.conf & add/remove the port/service to the comma separated list in { }
     #
-    # OR use the following command (allows dhcp)
+    # OR use the following command (e.g., allow dhcp)
     sed -i.bak 's/[[:space:]]}/, dhcp }/' /etc/pf.conf && pfctl -nf /etc/pf.conf && pfctl -vvf /etc/pf.conf
 
     # Fail2ban: List all active jails
     sudo fail2ban-client status
 
-    # Fail2ban: List all IP banned by a jail (sshd)
+    # Fail2ban: List all IP banned by a jail (e.g., sshd)
     sudo fail2ban-client status sshd
 
     # Fail2ban: Manually ban an IP
@@ -103,49 +103,57 @@ Tested and working on:
 - FreeBSD:
     - FreeBSD 14.3
 
+> Tested with each OS's official qcow2 file through KVM virtualisation.
+
 ## What does it do exactly?
 
-Depending on options chosen & OS (Linux vs FreeBSD) it does the following:
+Depending on options chosen & OS (Linux vs FreeBSD), it does the following:
 
-1. Reset `root` users password (optional)
-2. Create new user & give it `sudo` privileges (optional)
-3. Generate OpenSSH (ed25519) keys (public & private) for the user with a passphrase
+1. (Optional) Resets `root` users password
+2. (Optional) Creates new user & give it `sudo` privileges
+3. Generates OpenSSH (ed25519) keys (public & private) for the user with a passphrase
 4. Updates SSH configuration to:
-    a. Disable `root` login
-    b. Disable password login
-    c. Enable key-only login
+    - Disable `root` login
+    - Disable password login
+    - Enable sshkey-only login
 5. Installs applications:
-    a. Linux: curl, sudo, firewalld, fail2ban
-    b. FreeBSD: curl, sudo, fail2ban
+    - Linux: curl, sudo, firewalld, fail2ban
+    - FreeBSD: curl, sudo, fail2ban
 6. Configures firewall which allows incoming sshd, http, https traffic & blocks everything else:
-    a. Linux: `firewalld` is used as firewall
-    b. FreeBSD: `pf` is used as firewall
-7. Configures `fail2ban` to with following jails (FreeBSD: `pf` table is used to block IPs):
-    a. sshd
-    b. nginx-botsearch
-    c. nginx-http-auth
-    d. nginx-limit-req
-    e. haproxy-http-auth
-    f. recidive
+    - Linux: `firewalld` is used as firewall
+    - FreeBSD: `pf` is used as firewall
+7. Linux: Configures `fail2ban` to with following jails (FreeBSD: `pf` table is used to block IPs):
+    - sshd
+    - nginx-botsearch
+    - nginx-http-auth
+    - nginx-limit-req
+    - haproxy-http-auth
+    - recidive
 8. Displays following on console:
-    a. New root password
-    b. New user name & password
-    c. SSH Private & Public keys
-    d. SSH Passphrase
+    - New root password
+    - New user name & password
+    - SSH Private & Public keys
+    - SSH Passphrase
 9. Deletes SSH Private Key from server
+
+> [!NOTE] Handling Operation Failure
+>
+> - The script creates back up of each file it changes, in the same location as the original file. Backup file name: [original-name].bak.[timestamp]
+> - On failure of an operation that depends on a configuration file, the script restores the original file and restarts the relevant service.
+> - Reason for failures can be found in the log file.
 
 ### Why `firewalld` and not `ufw`?
 
 - `firewalld` is default firewall on Rocky Linux, SUSE, Fedora, RHEL
-- Can use similar commands like `ufw` for basic administration
+- Can use similar commands like `ufw`, for basic administration
 - Comes with a lot more power when needed
 
 ## To-do
 
 - [ ] LUKS encryption
 - [ ] Unattended-updates if distro supports it (do it during installations)
-- [ ] Layer 2 security: Midtier: OSSEC: Mid tier attack prevention
-- [ ] Audit: Lynis: System security audits
+- [ ] Layer 2 security: Midtier: OSSEC
+- [ ] Audit: Lynis
 - [ ] Monitoring + Alerts: Goaccess???
 - [ ] Backups: ???
 
