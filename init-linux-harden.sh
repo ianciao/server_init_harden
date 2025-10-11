@@ -758,7 +758,7 @@ fail2ban_jail_settings() {
 
     # Get server's public IP
     file_log "Getting server's public IP..."
-    PUBLIC_IP=$(curl -s -4 ifconfig.me 2>&1 || curl -s -4 icanhazip.com 2>&1 || curl -s -4 ipinfo.io/ip 2>&1)
+    PUBLIC_IP=$(curl -s -4 --max-time 10 --fail https://ifconfig.me 2>&1)
     file_log "INFO" "Server public IP: $PUBLIC_IP"
 
     file_log "INFO" "Adding jails to $JAIL_LOCAL..."
