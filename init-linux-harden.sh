@@ -634,7 +634,7 @@ configure_firewall_freebsd() {
     fi
 
     touch $PF_CONF_FILE
-    cat >>$PF_CONF_FILE <<'EOF'
+    cat >>$PF_CONF_FILE <<EOF
 # Network Hygiene: Normalize network packets
 scrub in all
 
@@ -763,7 +763,7 @@ fail2ban_jail_settings() {
 
     file_log "INFO" "Adding jails to $JAIL_LOCAL..."
 
-    cat <<FAIL2BAN >"$JAIL_LOCAL"
+    cat <<EOF >"$JAIL_LOCAL"
 [DEFAULT]
 backend = auto
 banaction = firewallcmd-rich-rules[actiontype=<multiport>]
@@ -858,7 +858,7 @@ banaction = %(banaction_allports)s
 bantime  = 1w
 findtime = 1d
 maxretry = 3
-FAIL2BAN
+EOF
 
     # FreeBSD specific ban-actions
     if [ -f /etc/pf.conf ]; then
@@ -955,7 +955,7 @@ configure_fail2ban_freebsd() {
 
     # Add fail2ban table to PF configuration
     if ! grep -q 'table <f2b>' "$PF_CONF_FILE" 2>/dev/null; then
-        cat <<'EOF' >>"$PF_CONF_FILE"
+        cat <<EOF >>"$PF_CONF_FILE"
 
 # Fail2ban table and anchor
 table <f2b> persist
