@@ -1,7 +1,7 @@
 #!/bin/sh
 
 SCRIPT_NAME=server-init-harden
-SCRIPT_VERSION=3.1
+SCRIPT_VERSION=3.7
 TIMESTAMP=$(date '+%Y-%m-%d-%H-%M-%S')
 LOG_FILE_NAME="/var/log/${SCRIPT_NAME}_${TIMESTAMP}.log"
 
@@ -731,133 +731,6 @@ configure_firewall() {
     fi
 }
 
-fail2ban_jail_settings() {
-    JAIL_LOCAL=$1
-
-    # Backup jail.local if it exists
-    if [ -f "$JAIL_LOCAL" ]; then
-        JAIL_LOCAL_BACKUP="${JAIL_LOCAL}.bak.${TIMESTAMP}"
-        cp "$JAIL_LOCAL" "$JAIL_LOCAL_BACKUP"
-        file_log "INFO" "Created backup of existing jail.local at $JAIL_LOCAL_BACKUP"
-    fi
-
-    # Get server's public IP
-    file_log "Getting server's public IP..."
-    PUBLIC_IP=$(curl -s -4 --max-time 10 --fail https://ifconfig.me 2>&1)
-    file_log "INFO" "Server public IP: $PUBLIC_IP"
-
-    file_log "INFO" "Adding jails to $JAIL_LOCAL..."
-
-    cat <<EOF >"$JAIL_LOCAL"
-[DEFAULT]
-backend = auto
-banaction = firewallcmd-rich-rules[actiontype=<multiport>]
-banaction_allports = firewallcmd-rich-rules[actiontype=<allports>]
-ignoreip = 127.0.0.1/8 ::1 $PUBLIC_IP
-bantime  = 1h
-findtime = 10m
-maxretry = 5
-# Action: ban only (action_) or ban and email (action_mwl)
-action = %(action_)s
-
-#
-# SSH Jail
-#
-[sshd]
-enabled  = true
-port     = ssh
-filter   = sshd
-logpath  = %(sshd_log)s
-           /var/log/auth.log
-           /var/log/secure
-maxretry = 5
-bantime  = 1h
-findtime = 10m
-
-#
-# Nginx Bot Search - Blocks bots searching for vulnerabilities (404 errors)
-#
-[nginx-botsearch]
-enabled  = true
-port     = http,https
-filter   = nginx-botsearch
-logpath  = %(nginx_access_log)s
-           /var/log/nginx/access.log
-           $(dirname "$JAIL_LOCAL_BACKUP")/emptylog
-maxretry = 5
-bantime  = 6h
-findtime = 10m
-
-#
-# Nginx HTTP Authentication
-#
-[nginx-http-auth]
-enabled  = true
-port     = http,https
-filter   = nginx-http-auth
-logpath  = %(nginx_error_log)s
-           /var/log/nginx/error.log
-           $(dirname "$JAIL_LOCAL_BACKUP")/emptylog
-maxretry = 3
-bantime  = 6h
-findtime = 10m
-
-#
-# Nginx Limit Request (DDoS protection)
-#
-[nginx-limit-req]
-enabled  = true
-port     = http,https
-filter   = nginx-limit-req
-logpath  = %(nginx_error_log)s
-           /var/log/nginx/error.log
-           $(dirname "$JAIL_LOCAL_BACKUP")/emptylog
-maxretry = 10
-bantime  = 6h
-findtime = 10m
-
-#
-# HAProxy HTTP Authentication Failures
-#
-[haproxy-http-auth]
-enabled  = true
-port     = http,https
-filter   = haproxy-http-auth
-logpath  = /var/log/haproxy.log
-           /var/log/haproxy/haproxy.log
-           /var/log/haproxy/*.log
-           $(dirname "$JAIL_LOCAL_BACKUP")/emptylog
-maxretry = 3
-bantime  = 6h
-findtime = 10m
-
-#
-# Recidive Jail - Ban repeat offenders
-# This jail monitors fail2ban.log for IPs that have been banned multiple times
-#
-[recidive]
-enabled  = true
-filter   = recidive
-logpath  = /var/log/fail2ban.log
-banaction = %(banaction_allports)s
-bantime  = 1w
-findtime = 1d
-maxretry = 3
-EOF
-
-    # FreeBSD specific ban-actions
-    if [ -f /etc/pf.conf ]; then
-        sed -i.bak -E 's/(^banaction = )firewallcmd.*/\1pf[actiontype=<allports>]/' "$JAIL_LOCAL"
-        sed -i.bak -E 's/(^banaction_allports = )firewallcmd.*/\1pf[actiontype=<allports>]/' "$JAIL_LOCAL"
-        rm "$JAIL_LOCAL".bak >/dev/null 2>&1
-    fi
-
-    # Dummy logfile so the configuration doesn't fail
-    touch "$(dirname "$JAIL_LOCAL")"/emptylog && chmod 644 "$(dirname "$JAIL_LOCAL")"/emptylog
-
-    file_log "INFO" "Jails added to $JAIL_LOCAL"
-}
-
 revert_fail2ban_jail_file() {
     if [ -f "$JAIL_LOCAL_BACKUP" ]; then
         console_log "INFO" "Reverting jail.local using [ $JAIL_LOCAL_BACKUP ]..."
@@ -885,19 +758,142 @@ revert_fail2ban_jail_file() {
         console_log "INFO" "Restarted fail2ban with original configuration"
         file_log "INFO" "Restarted fail2ban with original configuration"
     else
+        manage_service fail2ban disable
         console_log "ERROR" "Failed to restart fail2ban service even with original configuration"
         file_log "ERROR" "Failed to restart fail2ban service even with original configuration"
         return 1
     fi
 }
 
-configure_fail2ban_linux() {
-    fail2ban_jail_settings "/etc/fail2ban/jail.local"
+fail2ban_jail_settings() {
+    JAIL_LOCAL=$1
+
+    # Backup jail.local if it exists
+    if [ -f "$JAIL_LOCAL" ]; then
+        JAIL_LOCAL_BACKUP="${JAIL_LOCAL}.bak.${TIMESTAMP}"
+        cp "$JAIL_LOCAL" "$JAIL_LOCAL_BACKUP"
+        file_log "INFO" "Created backup of existing jail.local at $JAIL_LOCAL_BACKUP"
+    fi
+
+    # Get server's public IP
+    file_log "Getting server's public IP..."
+    PUBLIC_IP=$(curl -s -4 --max-time 10 --fail https://ifconfig.me 2>&1)
+    file_log "INFO" "Server public IP: $PUBLIC_IP"
+
+    # Dummy logfile so the configuration doesn't fail when nginx/haproxy are not installed
+    JAIL_LOCAL_DIR=$(dirname "$JAIL_LOCAL")
+    touch "$JAIL_LOCAL_DIR"/emptylog && chmod 644 "$JAIL_LOCAL_DIR"/emptylog
+
+    file_log "INFO" "Adding jails to $JAIL_LOCAL..."
+
+    cat <<EOF >"$JAIL_LOCAL"
+[DEFAULT]
+backend = auto
+banaction = firewallcmd-rich-rules[actiontype=<multiport>]
+banaction_allports = firewallcmd-rich-rules[actiontype=<allports>]
+ignoreip = 127.0.0.1/8 ::1 $PUBLIC_IP
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+# Action: ban only (action_) or ban and email (action_mwl)
+action = %(action_)s
+
+#
+# SSH Jail
+#
+[sshd]
+enabled  = true
+port     = ssh
+filter   = sshd
+logpath  = %(sshd_log)s
+           /var/log/auth.log
+           /var/log/secure
+maxretry = 5
+bantime  = 1h
+
+#
+# Nginx Bot Search - Blocks bots searching for vulnerabilities (404 errors)
+#
+[nginx-botsearch]
+enabled  = true
+port     = http,https
+filter   = nginx-botsearch
+logpath  = %(nginx_access_log)s
+           $JAIL_LOCAL_DIR/emptylog
+maxretry = 5
+bantime  = 6h
+
+#
+# Nginx HTTP Authentication
+#
+[nginx-http-auth]
+enabled  = true
+port     = http,https
+filter   = nginx-http-auth
+logpath  = %(nginx_error_log)s
+           $JAIL_LOCAL_DIR/emptylog
+maxretry = 3
+bantime  = 6h
+
+#
+# Nginx Limit Request (DDoS protection)
+#
+[nginx-limit-req]
+enabled  = true
+port     = http,https
+filter   = nginx-limit-req
+logpath  = %(nginx_error_log)s
+           $JAIL_LOCAL_DIR/emptylog
+maxretry = 10
+bantime  = 6h
+
+#
+# HAProxy HTTP Authentication Failures
+#
+[haproxy-http-auth]
+enabled  = true
+port     = http,https
+filter   = haproxy-http-auth
+logpath  = /var/log/haproxy.log
+           /var/log/haproxy/haproxy.log
+           /var/log/haproxy/*.log
+           $JAIL_LOCAL_DIR/emptylog
+maxretry = 3
+bantime  = 6h
+
+#
+# Recidive Jail - Ban repeat offenders
+# This jail monitors fail2ban.log for IPs that have been banned multiple times
+#
+[recidive]
+enabled  = true
+filter   = recidive
+logpath  = /var/log/fail2ban.log
+           $JAIL_LOCAL_DIR/emptylog
+banaction = %(banaction_allports)s
+bantime  = 1w
+findtime = 1d
+maxretry = 3
+EOF
+
+    # FreeBSD specific ban-actions
+    if [ -f /etc/pf.conf ]; then
+        sed -i.bak -E 's/(^banaction = )firewallcmd.*/\1pf[actiontype=<allports>]/' "$JAIL_LOCAL"
+        sed -i.bak -E 's/(^banaction_allports = )firewallcmd.*/\1pf[actiontype=<allports>]/' "$JAIL_LOCAL"
+        rm "$JAIL_LOCAL".bak >/dev/null 2>&1
+    fi
+
+    file_log "INFO" "Jails added to $JAIL_LOCAL"
+
+    output=$(fail2ban-client -t 2>&1 && manage_service fail2ban enable && manage_service fail2ban start)
+    command_status=$?
+
+    file_log "INFO" "$output"
 
     # Restart fail2ban
-    if ! manage_service fail2ban restart; then # Error in configuration
-        console_log "ERROR" "Failed to restart fail2ban service"
-        file_log "ERROR" "Failed to restart fail2ban service"
+    if [ $command_status -ne 0 ]; then
+        console_log "ERROR" "Failed to start fail2ban service"
+        file_log "ERROR" "Failed to start fail2ban service"
 
         revert_fail2ban_jail_file
 
@@ -905,32 +901,10 @@ configure_fail2ban_linux() {
     fi
 }
 
-configure_fail2ban_freebsd() {
-    RC_CONF_FILE="/etc/rc.conf"
+fail2ban_freebsd_pf_conf() {
     PF_CONF_FILE="/etc/pf.conf"
-    fail2ban_jail_settings "/usr/local/etc/fail2ban/jail.local"
 
-    # Auto start fail2ban on boot and restart with new configuration
-    output=$(sysrc fail2ban_enable="YES" 2>&1 && manage_service fail2ban restart 2>&1)
-    command_output=$?
-
-    file_log "INFO" "$output"
-
-    # Revert fail2ban & rc.conf changes if fail2ban starting failed
-    if [ $command_output -ne 0 ]; then
-        file_log "ERROR" "Could not start fail2ban service. Reverting changes..."
-
-        # Don't start fail2ban on boot
-        sed -i.bak '/^fail2ban_enable/d' $RC_CONF_FILE
-        rm "$RC_CONF_FILE".bak >/dev/null 2>&1
-
-        file_log "INFO" "Reverted $RC_CONF_FILE"
-
-        revert_fail2ban_jail_file
-
-        return 1
-    fi
-
+    # Backup the pf configuration file
     if [ -f "$PF_CONF_FILE" ]; then
         PF_CONF_BACKUP_FILE="${PF_CONF_FILE}.bak.${TIMESTAMP}"
         output=$(cp "$PF_CONF_FILE" "$PF_CONF_BACKUP_FILE" 2>&1)
@@ -954,7 +928,7 @@ EOF
     command_status=$?
     file_log "INFO" "$output"
 
-    if [ $command_output -ne 0 ]; then
+    if [ $command_status -ne 0 ]; then
         console_log "ERROR" "Failed to restart pf post fail2ban. Reverting pf.config..."
         file_log "ERROR" "Failed to restart pf post fail2ban. Reverting pf.config..."
 
@@ -985,11 +959,16 @@ configure_fail2ban() {
     file_log "INFO" "Configuring Fail2ban..."
 
     if command -v firewall-cmd >/dev/null 2>&1; then # Linux
-        configure_fail2ban_linux
+        fail2ban_jail_settings "/etc/fail2ban/jail.local"
         command_status=$?
     elif [ -f /etc/pf.conf ]; then # FreeBSD
-        configure_fail2ban_freebsd
-        command_status=$?
+        if fail2ban_jail_settings "/usr/local/etc/fail2ban/jail.local"; then
+            # Perform additional pf specific configuration
+            fail2ban_freebsd_pf_conf
+            command_status=$?
+        else
+            command_status=1
+        fi
     fi
 
     if [ "$command_status" -eq 0 ]; then
