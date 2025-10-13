@@ -637,7 +637,7 @@ pass out all keep state
 pass in proto tcp from any to any port { ssh, http, https } keep state
 EOF
 
-    output=$(service pf start 2>&1)
+    output=$(manage_service pf enable && manage_service pf start)
     file_log "INFO" "$output"
 
     # Verify rules and load configuration
