@@ -86,6 +86,11 @@ parse_and_validate_args() {
             ;;
         esac
     done
+
+    if [ -z "$USERNAME" ]; then
+        console_log "ERROR" "Please provide a user name: e.g., [$0 --username jay]"
+        exit 1
+    fi
 }
 
 ###########################################################################################
@@ -136,8 +141,6 @@ print_operation_details() {
     if [ -n "$USERNAME" ]; then
         echo "    [-u $USERNAME]: New user $USERNAME will be created"
         echo "    [-u $USERNAME]: New SSH key will be generated for $USERNAME"
-    else
-        echo "    New SSH key will be generated for $(whoami)"
     fi
 
     echo "    SSH: login to root account will be disabled"
@@ -369,36 +372,36 @@ user_privileged_access() {
 }
 
 generate_ssh_key() {
-    console_log "INFO" "Generating SSH key for [ $SSH_KEY_USER ]..."
-    file_log "INFO" "Generating SSH key for [ $SSH_KEY_USER ]"
+    console_log "INFO" "Generating SSH key for [ $USERNAME ]..."
+    file_log "INFO" "Generating SSH key for [ $USERNAME ]"
 
     # Create .ssh directory & set proper permissions
     home_dir=$(eval echo "~$USERNAME")
     ssh_dir="$home_dir/.ssh"
     if [ ! -d "$home_dir" ]; then
-        console_log "ERROR" "Home directory not found for [ $SSH_KEY_USER ]"
-        file_log "ERROR" "Home directory not found for [ $SSH_KEY_USER ]"
+        console_log "ERROR" "Home directory not found for [ $USERNAME ]"
+        file_log "ERROR" "Home directory not found for [ $USERNAME ]"
         return 1
     else
-        mkdir -p "$ssh_dir" && chown "$SSH_KEY_USER:$SSH_KEY_USER" "$ssh_dir" && chmod 700 "$ssh_dir" || return 1
+        mkdir -p "$ssh_dir" && chown "$USERNAME:$USERNAME" "$ssh_dir" && chmod 700 "$ssh_dir" || return 1
         file_log "INFO" "Created .ssh directory: $ssh_dir"
     fi
 
     # Generate passphrase
     SSH_KEY_PASSPHRASE=$(head -c 12 /dev/urandom | base64 | tr -dc "[:alnum:]" | head -c 15)
 
-    key_name="id_${SSH_KEY_USER}_ed25519"
+    key_name="id_${USERNAME}_ed25519"
     SSH_KEY_FILE="$ssh_dir/$key_name"
 
     # Generate the SSH key
-    file_log "INFO" "Generating SSH key for $SSH_KEY_USER"
-    if ! output=$(ssh-keygen -o -a 1000 -t ed25519 -f "$SSH_KEY_FILE" -N "$SSH_KEY_PASSPHRASE" -C "$SSH_KEY_USER" -q 2>&1); then
-        console_log "ERROR" "Failed to generate SSH key for user [ $SSH_KEY_USER ]"
-        file_log "ERROR" "Failed to generate SSH key for user [ $SSH_KEY_USER ]"
+    file_log "INFO" "Generating SSH key for $USERNAME"
+    if ! output=$(ssh-keygen -o -a 1000 -t ed25519 -f "$SSH_KEY_FILE" -N "$SSH_KEY_PASSPHRASE" -C "$USERNAME" -q 2>&1); then
+        console_log "ERROR" "Failed to generate SSH key for user [ $USERNAME ]"
+        file_log "ERROR" "Failed to generate SSH key for user [ $USERNAME ]"
         file_log "ERROR" "$output"
         return 1
     fi
-    file_log "INFO" "SSH key generated for $SSH_KEY_USER"
+    file_log "INFO" "SSH key generated for $USERNAME"
     file_log "INFO" "To change passphrase: ssh-keygen -p -f $SSH_KEY_FILE -P"
 
     # Set proper permissions for the key
@@ -415,12 +418,12 @@ generate_ssh_key() {
 
     # Set proper permissions on authorized_keys
     chmod 400 "$authorized_keys"
-    chown "$SSH_KEY_USER:$SSH_KEY_USER" "$authorized_keys"
+    chown "$USERNAME:$USERNAME" "$authorized_keys"
     file_log "INFO" "Added public key to: $authorized_keys"
 
     # Log the key details
-    file_log "INFO" "SSH key generated for [ $SSH_KEY_USER ]"
-    console_log "SUCCESS" "SSH key generated for [ $SSH_KEY_USER ]"
+    file_log "INFO" "SSH key generated for [ $USERNAME ]"
+    console_log "SUCCESS" "SSH key generated for [ $USERNAME ]"
     file_log "SUCCESS" "Key path: [ $SSH_KEY_FILE ]"
 
     console_log "INFO" "Key path: [ $SSH_KEY_FILE ]"
@@ -1060,34 +1063,26 @@ main() {
         # Continue regardless of error
     fi
 
-    # Step 2: Create new user
-    if [ -n "$USERNAME" ]; then
-        if ! create_user; then
-            print_log_file_details
-            return 1 # Abort on error
-        fi
-        if ! user_privileged_access; then
-            print_log_file_details
-            return 1 # Abort on error
-        fi
-    fi
-
-    # Step 3: Generate SSH key for user
-    if [ -n "$USERNAME" ]; then
-        SSH_KEY_USER="$USERNAME"
-    else
-        SSH_KEY_USER="$USER"
-    fi
-
-    if ! generate_ssh_key "$SSH_KEY_USER"; then
-        console_log "ERROR" "Failed to generate SSH key for [ $SSH_KEY_USER ]"
+    # Step 2: Configure SSH
+    if ! harden_ssh_config; then
+        console_log "ERROR" "Failed to update ssh configuration to harden it"
         print_log_file_details
         return 1 # Abort on error
     fi
 
-    # Step 4: Configure SSH
-    if ! harden_ssh_config; then
-        console_log "ERROR" "Failed to update ssh configuration to harden it"
+    # Step 3: Create new user
+    if ! create_user; then
+        print_log_file_details
+        return 1 # Abort on error
+    fi
+    if ! user_privileged_access; then
+        print_log_file_details
+        return 1 # Abort on error
+    fi
+
+    # Step 4: Generate SSH key for user
+    if ! generate_ssh_key "$USERNAME"; then
+        console_log "ERROR" "Failed to generate SSH key for [ $USERNAME ]"
         print_log_file_details
         return 1 # Abort on error
     fi
