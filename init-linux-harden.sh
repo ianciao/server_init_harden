@@ -184,33 +184,22 @@ manage_service() {
     action="$2" # start, stop, restart, enable
 
     command_status=0
-    # Try service command
-    if command -v service >/dev/null 2>&1; then
-        file_log "INFO" "Using service command for $service_name $action"
-        case "$action" in
-        enable)
-            # Service command doesn't support enable
-            # We will do nothing here, and let the systemctl handle this
-            ;;
-        *)
-            output=$(service "$service_name" "$action" 2>&1)
-            command_status=$?
-            if [ -n "$output" ]; then
-                file_log "INFO" "service $action output: $output"
-            fi
-            return $command_status
-            ;;
-        esac
-    fi
 
     # Try systemctl first (systemd)
     if command -v systemctl >/dev/null 2>&1; then
         file_log "INFO" "Using systemctl for $service_name $action"
         output=$(systemctl "$action" "$service_name" 2>&1)
         command_status=$?
-        if [ -n "$output" ]; then
-            file_log "INFO" "systemctl $action output: $output"
-        fi
+        file_log "INFO" "systemctl $action output: $output"
+        return $command_status
+    fi
+
+    # Try service command
+    if command -v service >/dev/null 2>&1; then
+        file_log "INFO" "Using service command for $service_name $action"
+        output=$(service "$service_name" "$action" 2>&1)
+        command_status=$?
+        file_log "INFO" "service $action output: $output"
         return $command_status
     fi
 
@@ -223,25 +212,19 @@ manage_service() {
             if command -v chkconfig >/dev/null 2>&1; then
                 output=$(chkconfig "$service_name" on 2>&1)
                 command_status=$?
-                if [ -n "$output" ]; then
-                    file_log "INFO" "chkconfig output: $output"
-                fi
+                file_log "INFO" "chkconfig output: $output"
                 return $command_status
             elif command -v update-rc.d >/dev/null 2>&1; then
                 output=$(update-rc.d "$service_name" defaults 2>&1)
                 command_status=$?
-                if [ -n "$output" ]; then
-                    file_log "INFO" "update-rc.d output: $output"
-                fi
+                file_log "INFO" "update-rc.d output: $output"
                 return $command_status
             fi
             ;;
         *)
             output=$("/etc/init.d/$service_name" "$action" 2>&1)
             command_status=$?
-            if [ -n "$output" ]; then
-                file_log "INFO" "init.d $action output: $output"
-            fi
+            file_log "INFO" "init.d $action output: $output"
             return $command_status
             ;;
         esac
