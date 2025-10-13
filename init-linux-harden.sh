@@ -335,6 +335,13 @@ user_privileged_access() {
             command_status=$?
         fi
 
+        if [ ! -d "$SUDOERS_DIR" ]; then
+            mkdir -p "$SUDOERS_DIR" >/dev/null
+        fi
+
+        if [ ! -f "$SUDOERS_DIR"/wheel ]; then
+            touch "$SUDOERS_DIR"/wheel >/dev/null
+        fi
         echo "%wheel ALL=(ALL) ALL" >"$SUDOERS_DIR"/wheel
     elif getent group sudo >/dev/null 2>&1; then # Debian, Ubuntu
         output=$(usermod -aG sudo "$USERNAME" 2>&1)
