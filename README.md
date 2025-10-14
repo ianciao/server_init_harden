@@ -97,9 +97,13 @@ chmod +x harden.sh
 Tested and working on:
 
 - Linux:
-    - Debian 12, 13
+    - Debian 13
+    - Ubuntu 22.04, 24.04
     - Fedora 42
-    - Ubuntu 22.04, 24.04, 24.10
+    - Rocky Linux
+    - Alma Linux
+    - CentOS Stream 10
+    - openSUSE
 - FreeBSD:
     - FreeBSD 14.3
 

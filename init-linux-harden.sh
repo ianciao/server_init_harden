@@ -302,6 +302,7 @@ create_user() {
         command_status=$?
     else
         # Linux
+        sed -i.bak 's/^\(USERGROUPS_ENAB\s\).*/\1yes/' /etc/login.defs >/dev/null 2>&1 && rm -f /etc/login.defs.bak >/dev/null 2>&1
         output=$(useradd -m "$USERNAME" 2>&1 && printf '%s\n%s\n' "$USER_PASSWORD" "$USER_PASSWORD" | passwd "$USERNAME" 2>&1)
         command_status=$?
     fi
@@ -512,7 +513,7 @@ revert_ssh_config_changes() {
 }
 
 install_packages() {
-    console_log "INFO" "Installing required applications..."
+    console_log "INFO" "Installing required applications (~5 minutes)..."
     file_log "INFO" "Installing required applications..."
 
     LINUX_ONLY_PACKAGES="firewalld fail2ban"
@@ -527,22 +528,27 @@ install_packages() {
         file_log "WARNING" "Timezone set to UTC to avoid installation interruption. Change this after the script completes."
         file_log "INFO" "Installing $COMMON_PACKAGES $LINUX_ONLY_PACKAGES using apt..."
         # shellcheck disable=SC2086
-        output=$(DEBIAN_FRONTEND=noninteractive apt-get update -y && apt-get install -y --no-install-recommends $COMMON_PACKAGES $LINUX_ONLY_PACKAGES 2>&1)
+        output=$(DEBIAN_FRONTEND=noninteractive apt-get update -y 2>&1 && apt-get upgrade -y 2>&1 && apt-get install -y --no-install-recommends python3-systemd $COMMON_PACKAGES $LINUX_ONLY_PACKAGES 2>&1)
+        command_status=$?
+    elif [ -f /etc/rocky-release ] || [ -f /etc/almalinux-release ] || [ -f /etc/centos-release ]; then # Rocky, Almalinux,
+        file_log "INFO" "Installing epel-release $COMMON_PACKAGES $LINUX_ONLY_PACKAGES using dnf..."
+        # shellcheck disable=SC2086
+        output=$(dnf makecache 2>&1 && dnf update -y 2>&1 && dnf upgrade -y 2>&1 && dnf install -y epel-release 2>&1 && dnf install -y $COMMON_PACKAGES $LINUX_ONLY_PACKAGES 2>&1)
         command_status=$?
     elif [ -f /etc/fedora-release ]; then # Fedora
         file_log "INFO" "Installing $COMMON_PACKAGES $LINUX_ONLY_PACKAGES using dnf..."
         # shellcheck disable=SC2086
-        output=$(dnf makecache >/dev/null 2>&1 && dnf install -y $COMMON_PACKAGES $LINUX_ONLY_PACKAGES 2>&1)
+        output=$(dnf makecache 2>&1 && dnf update -y 2>&1 && dnf upgrate -y 2>&1 && dnf install -y $COMMON_PACKAGES $LINUX_ONLY_PACKAGES 2>&1)
         command_status=$?
     elif [ -f /etc/SuSE-release ] || [ -f /etc/SUSE-brand ] || command -v zypper >/dev/null 2>&1; then # SUSE
         file_log "INFO" "Installing $COMMON_PACKAGES $LINUX_ONLY_PACKAGES using zypper..."
         # shellcheck disable=SC2086
-        output=$(zypper refresh >/dev/null 2>&1 && zypper install -y $COMMON_PACKAGES $LINUX_ONLY_PACKAGES 2>&1)
+        output=$(zypper refresh 2>&1 && zypper update -y 2>&1 && zypper install -y $COMMON_PACKAGES $LINUX_ONLY_PACKAGES 2>&1)
         command_status=$?
     elif [ -f /etc/arch-release ] || command -v pacman >/dev/null 2>&1; then # Arch Linux
         file_log "INFO" "Installing $COMMON_PACKAGES $LINUX_ONLY_PACKAGES using pacman..."
         # shellcheck disable=SC2086
-        output=$(pacman -Sy >/dev/null 2>&1 && pacman -S --noconfirm $COMMON_PACKAGES $LINUX_ONLY_PACKAGES 2>&1)
+        output=$(pacman -Sy 2>&1 && pacman -S --noconfirm $COMMON_PACKAGES $LINUX_ONLY_PACKAGES 2>&1)
         command_status=$?
     elif [ -f /etc/freebsd-update.conf ]; then # FreeBSD
         file_log "INFO" "Installing $COMMON_PACKAGES using pkg..."
@@ -551,7 +557,7 @@ install_packages() {
         command_status=$?
     else
         file_log "ERROR" "Unsupported operating system"
-        return 1
+        command_status=1
     fi
 
     file_log "INFO" "Applications installation output: $output"
