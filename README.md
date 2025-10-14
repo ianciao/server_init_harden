@@ -45,50 +45,50 @@ chmod +x harden.sh
 - Linux:
 
     ```sh
-    # Firewalld: Check firewall status
-    sudo firewall-cmd --status && sudo firewall-cmd --list-services
+    # Check firewall status
+    sudo firewall-cmd --state && sudo firewall-cmd --list-services
 
-    # Firewalld: Allow a port/service (e.g., dhcp)
+    # Allow a port/service (e.g., dhcp)
     sudo firewall-cmd --permanent --add-service=dhcp
 
-    # Firewalld: Block a port/service (e.g., http)
+    # Block a port/service (e.g., http)
     sudo firewall-cmd --permanent --remove-service=http
 
-    # Fail2ban: List all active jails
+    # List all active jails
     sudo fail2ban-client status
 
-    # Fail2ban: List all IP banned by a jail (e.g., sshd)
+    # List all IPs banned by a jail (e.g., sshd)
     sudo fail2ban-client status sshd
 
-    # Fail2ban: Manually ban an IP
+    # Manually ban an IP
     sudo fail2ban-client set sshd banip 192.0.2.1
 
-    # Fail2ban: Manually un-ban an IP
+    # Manually un-ban an IP
     sudo fail2ban-client set sshd unbanip 192.0.2.1
     ```
 
 - FreeBSD:
 
     ```sh
-    # pf: Show active rules
+    # Show active firewall rules
     sudo pfctl -s rules
 
-    # pf: Allow or block services
+    # Allow or block port/service
     # Edit /etc/pf.conf & add/remove the port/service to the comma separated list in { }
     #
     # OR use the following command (e.g., allow dhcp)
     sed -i.bak 's/[[:space:]]}/, dhcp }/' /etc/pf.conf && pfctl -nf /etc/pf.conf && pfctl -vvf /etc/pf.conf
 
-    # Fail2ban: List all active jails
+    # List all active Fail2ban jails
     sudo fail2ban-client status
 
-    # Fail2ban: List all IP banned by a jail (e.g., sshd)
+    # List all IPs banned by a Fail2ban jail (e.g., sshd)
     sudo fail2ban-client status sshd
 
-    # Fail2ban: Manually ban an IP
+    # Manually ban an IP
     sudo fail2ban-client set sshd banip 192.0.2.1
 
-    # Fail2ban: Manually un-ban an IP
+    # Manually un-ban an IP
     sudo fail2ban-client set sshd unbanip 192.0.2.1
     ```
 
@@ -114,7 +114,7 @@ Tested and working on:
 Depending on options chosen & OS (Linux vs FreeBSD), it does the following:
 
 1. (Optional) Resets `root` users password
-2. (Optional) Creates new user & give it `sudo` privileges
+2. Creates new user & give it `sudo` privileges
 3. Generates OpenSSH (ed25519) keys (public & private) for the user with a passphrase
 4. Updates SSH configuration to:
     - Disable `root` login
@@ -140,7 +140,7 @@ Depending on options chosen & OS (Linux vs FreeBSD), it does the following:
     - SSH Passphrase
 9. Deletes SSH Private Key from server
 
-> [!NOTE] Handling Operation Failure
+> Handling Operation Failure
 >
 > - The script creates back up of each file it changes, in the same location as the original file. Backup file name: [original-name].bak.[timestamp]
 > - On failure of an operation that depends on a configuration file, the script restores the original file and restarts the relevant service.
@@ -149,7 +149,7 @@ Depending on options chosen & OS (Linux vs FreeBSD), it does the following:
 ### Why `firewalld` and not `ufw`?
 
 - `firewalld` is default firewall on Rocky Linux, SUSE, Fedora, RHEL
-- Can use similar commands like `ufw`, for basic administration
+- Commands for basic administration are similar to that of `ufw`
 - Comes with a lot more power when needed
 
 ## To-do
@@ -161,14 +161,10 @@ Depending on options chosen & OS (Linux vs FreeBSD), it does the following:
 - [ ] Monitoring + Alerts: Goaccess???
 - [ ] Backups: ???
 
-## License
+## Retrospect: Why a script?
 
-Copyright © 2025, Pratik Kumar Tripathy. All rights reserved.
+You CAN do everything this script does with Ansible. That is, if you know how it works (not trivial) and have it's *control node* installed on your local machine. I don't.
 
-Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+Personally, writing the script has given me deeper understanding of cloud security and about the similarities (and differences) between Unix-like operating systems.
 
-1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+That said, the quirks of shell scripting is tiring to keep up with. Also, most VPS providers support cloud-init. Cloud-init can't do everything the script does; but it's *trivial* to accomplish 80% of it using cloud-init. That makes it worthwhile to learn and use.
