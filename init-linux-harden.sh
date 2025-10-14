@@ -1003,14 +1003,15 @@ print_credentials_and_clean_up() {
     fi
 
     echo "SSH private key:"
-    cat "$SSH_KEY_FILE" && rm "$SSH_KEY_FILE" >/dev/null 2>&1
+    cat "$SSH_KEY_FILE"
     echo
 
     echo "SSH Key's Passphrase: $SSH_KEY_PASSPHRASE"
     echo
 
     echo "SSH public key location: $SSH_KEY_FILE.pub:"
-    cat "$SSH_KEY_FILE.pub"
+    # shellcheck disable=SC2086
+    cat "$SSH_KEY_FILE.pub" && rm -f $SSH_KEY_FILE* >/dev/null 2>&1
     echo "########################################################################################"
 }
 
